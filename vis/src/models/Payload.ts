@@ -3,6 +3,8 @@ interface Rect {
     r: number,
     u: number,
     d: number,
+    px: number,
+    py: number,
     id: number,
     need: number,
     subScore: number
