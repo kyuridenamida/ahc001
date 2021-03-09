@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket.IO chat</title>
+</head>
+<script src="/socket.io/socket.io.js"></script>
+Socket.IO Example.
+<script>
+    var socket = io();
+    socket.on("publish", function (data) {
+        console.log(data);
+    });
+</script>
+</body>
+</html>
