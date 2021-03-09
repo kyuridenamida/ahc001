@@ -7,6 +7,7 @@ const io = require('socket.io')(http);
 const port = Number(process.env.PORT || 8888);
 app.use(express.json())
 app.post('/json/', function (req: any, res: any) {
+    console.log(req.body);
     io.sockets.emit("publish", req.body);
     res.send("ok")
 });

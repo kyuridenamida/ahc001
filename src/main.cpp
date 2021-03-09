@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <complex>
 #include "./common.h"
+#include "visclient.h"
 
 using namespace std;
 
@@ -120,6 +121,41 @@ double simulation() {
 }
 
 
+string createJson(vector<GeoRect> rects, double score, Input input) {
+    auto quoted = [&](string key) {
+        return "\"" + key + "\"";
+    };
+
+    auto f = [&](GeoRect r, int idx) {
+        stringstream ss;
+        double subScore = min(r.area(), 1. * input.advs[idx].r) / max(r.area(), 1. * input.advs[idx].r);
+
+        ss << "{"
+           << quoted("l") << ":" << r.l << ","
+           << quoted("r") << ":" << r.r << ","
+           << quoted("u") << ":" << r.u << ","
+           << quoted("d") << ":" << r.d << ","
+           << quoted("id") << ":" << idx << ","
+           << quoted("need") << ":" << input.advs[idx].r << ","
+           << quoted("subScore") << ":" << subScore
+           << "}";
+        return ss.str();
+    };
+    stringstream ss;
+    ss << "{" << quoted("rects") << ": [";
+    for (int i = 0; i < rects.size(); i++) {
+        if (i != 0) {
+            ss << ",\n";
+        }
+        ss << f(rects[i], i);
+    }
+    ss << "],\n";
+    ss << quoted("score") << ": " << score << "\n";
+    ss << "}";
+    return ss.str();
+}
+
+
 Output createOutput(vector<GeoRect> rects, Input input) {
     vector<OutputItem> res;
     for (auto i : input.advs) {
@@ -147,15 +183,31 @@ public:
                         min(rects[idx].area(), 1. * input.advs[idx].r) / max(rects[idx].area(), 1. * input.advs[idx].r);
                 if (A > 0.9) continue;
 
-                r[idx].l -= random(0, 10);
-                r[idx].r += random(0, 10);
-                r[idx].d -= random(0, 10);
-                r[idx].u += random(0, 10);
+                int W = rand() % 4;
+                if (W == 0) {
+                    r[idx].l -= random(0, 10);
+                } else if (W == 1) {
+                    r[idx].r += random(0, 10);
+                } else if (W == 2) {
+                    r[idx].d -= random(0, 10);
+                } else {
+                    r[idx].u += random(0, 10);
+                }
             }
 
-            for (int j = 0; j < 1000; j++) {
+
+            int c = 0;
+            for (int j = 0; j < 100; j++) {
                 vector<GeoRect> nxt = next(r, input);
+                if( r == nxt){
+                    break;
+                }
                 r = nxt;
+
+                c++;
+            }
+            if( c == 100) {
+                continue;
             }
             double nextScore = score(r, input);
 
@@ -163,10 +215,7 @@ public:
                 cerr << currentScore << endl;
                 currentScore = nextScore;
                 rects = r;
-                if (currentScore > 0.66) {
-                    createOutput(rects, input).output(cout);
-                    break;
-                }
+                emitJson(createJson(r, currentScore, input));
             }
 
         }
