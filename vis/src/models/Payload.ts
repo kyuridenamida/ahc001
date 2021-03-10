@@ -1,4 +1,4 @@
-interface Rect {
+export interface Rect {
     l: number,
     r: number,
     u: number,
