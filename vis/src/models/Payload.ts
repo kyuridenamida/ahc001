@@ -10,7 +10,15 @@ export interface Rect {
     subScore: number
 }
 
-export interface Payload {
+export interface DrawPayload {
+    type: "draw"
     rects: Rect[]
     score: number
 }
+
+export interface CommunicationRegisterPayload {
+    type: "communication"
+    file: string
+}
+
+export type Payload = DrawPayload | CommunicationRegisterPayload;

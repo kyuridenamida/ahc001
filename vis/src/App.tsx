@@ -3,7 +3,7 @@ import React, {useEffect, useMemo, useState} from 'react';
 import logo from './logo.svg';
 import './App.css';
 import {subscribePublishEvent} from "./utils/SocketIOUtils";
-import {Payload, Rect} from "./models/Payload";
+import {DrawPayload, Payload, Rect} from "./models/Payload";
 
 const contributionColor = (subScore: number, overallScore: number) => {
     const d = subScore - overallScore;
@@ -15,6 +15,7 @@ const contributionColor = (subScore: number, overallScore: number) => {
         return "rgba(128, 255, 64, 1)"
     }
 }
+
 const scoreToColor = (score: number) => {
     if (score <= 0.5) {
         return "rgba(255, 64, 64, 1)";
@@ -36,14 +37,18 @@ interface Point {
 
 function App() {
     const [context, setContext] = useState<CanvasRenderingContext2D | null>(null);
-    const [payload, setPayload] = useState<Payload | null>();
+    const [payload, setPayload] = useState<DrawPayload | null>();
     const [selectedRectangles, setSelectedRectangles] = useState<Rect[]>([]);
+    const [communicationFile, setCommunicationFile] = useState<string | null>();
 
     useEffect(() => {
         const canvas = document.getElementById("canvas") as HTMLCanvasElement | null;
         const canvasContext = canvas?.getContext("2d") ?? null;
         setContext(canvasContext)
     }, []);
+
+    const [startPoint, setStartPoint] = useState<Point | null>(null);
+    const [endPoint, setEndPoint] = useState<Point | null>(null);
 
     useEffect(() => {
         if (!context || !payload) return;
@@ -89,94 +94,188 @@ function App() {
                 context.fillStyle = "black";
                 context.fillText(`${Math.round(rect.subScore * 100) / 100}`, qx, qy);
             }
-        )
-        payload.rects.forEach(
-            (r_) => {
-                const rect = {...r_};
-                rect.l /= 10;
-                rect.r /= 10;
-                rect.d /= 10;
-                rect.u /= 10;
-                rect.px /= 10;
-                rect.py /= 10;
-
-                selectedRectangles.forEach(s_ => {
-                    if (s_.id == r_.id) return;
-
-                    const s = {...payload.rects[s_.id]};
-                    s.l /= 10;
-                    s.r /= 10;
-                    s.d /= 10;
-                    s.u /= 10;
-                    s.px /= 10;
-                    s.py /= 10;
-                    if (rect.px <= s.px) {
-                        if (rect.py <= s.py) {
-                            context.fillStyle = "rgba(0, 0, 0, 1)";
-                            context.fillRect(0, 0, rect.px, rect.py);
-                        } else {
-                            context.fillStyle = "rgba(0, 0, 0, 1)";
-                            context.fillRect(0, rect.py, rect.px, 1000 - rect.py);
-                        }
-                    } else {
-                        if (rect.py <= s.py) {
-                            context.fillStyle = "rgba(0, 0, 0, 1)";
-                            context.fillRect(rect.px, 0, 1000 - rect.px, rect.py);
-                        } else {
-                            context.fillStyle = "rgba(0, 0, 0, 1)";
-                            context.fillRect(rect.px, rect.py, 1000 - rect.px, 1000 - rect.py);
-
-                        }
-                    }
-                });
-            }
         );
+        if (startPoint && endPoint) {
+            context.fillStyle = "rgba(128, 128, 255, 0.5)";
+            context.fillRect(startPoint.x, startPoint.y, endPoint.x - startPoint.x, endPoint.y - startPoint.y);
+        }
 
-        selectedRectangles.forEach(s_ => {
-            const s = {...s_};
-            context.fillStyle = "red";
-            context.strokeStyle = "blue";
-            s.px /= 10;
-            s.py /= 10;
-            context.beginPath();
-            context.moveTo(s.px, 0);
-            context.lineTo(s.px, 1000);
-            context.stroke();
-            context.beginPath();
-            context.moveTo(0, s.py);
-            context.lineTo(1000, s.py);
-            context.stroke();
-        });
+        // payload.rects.forEach(
+        //     (r_) => {
+        //         const rect = {...r_};
+        //         rect.l /= 10;
+        //         rect.r /= 10;
+        //         rect.d /= 10;
+        //         rect.u /= 10;
+        //         rect.px /= 10;
+        //         rect.py /= 10;
+        //
+        //         selectedRectangles.forEach(s_ => {
+        //             if (s_.id == r_.id) return;
+        //
+        //             const s = {...payload.rects[s_.id]};
+        //             s.l /= 10;
+        //             s.r /= 10;
+        //             s.d /= 10;
+        //             s.u /= 10;
+        //             s.px /= 10;
+        //             s.py /= 10;
+        //             if (rect.px <= s.px) {
+        //                 if (rect.py <= s.py) {
+        //                     context.fillStyle = "rgba(0, 0, 0, 1)";
+        //                     context.fillRect(0, 0, rect.px, rect.py);
+        //                 } else {
+        //                     context.fillStyle = "rgba(0, 0, 0, 1)";
+        //                     context.fillRect(0, rect.py, rect.px, 1000 - rect.py);
+        //                 }
+        //             } else {
+        //                 if (rect.py <= s.py) {
+        //                     context.fillStyle = "rgba(0, 0, 0, 1)";
+        //                     context.fillRect(rect.px, 0, 1000 - rect.px, rect.py);
+        //                 } else {
+        //                     context.fillStyle = "rgba(0, 0, 0, 1)";
+        //                     context.fillRect(rect.px, rect.py, 1000 - rect.px, 1000 - rect.py);
+        //
+        //                 }
+        //             }
+        //         });
+        //     }
+        // );
+
+        // selectedRectangles.forEach(s_ => {
+        //     const s = {...s_};
+        //     context.fillStyle = "red";
+        //     context.strokeStyle = "blue";
+        //     s.px /= 10;
+        //     s.py /= 10;
+        //     context.beginPath();
+        //     context.moveTo(s.px, 0);
+        //     context.lineTo(s.px, 1000);
+        //     context.stroke();
+        //     context.beginPath();
+        //     context.moveTo(0, s.py);
+        //     context.lineTo(1000, s.py);
+        //     context.stroke();
+        // });
 
 
-    }, [payload, selectedRectangles]);
+    }, [payload, selectedRectangles, startPoint, endPoint]);
 
     useEffect(() => {
         subscribePublishEvent((payload) => {
-            setPayload(payload);
+            if (payload.type == "draw") {
+                setPayload(payload);
+            } else {
+                setCommunicationFile(payload.file);
+            }
         });
     }, []);
+
+    const sendRemoveRequest = async (file: string, remIndexes: number[]) => {
+        await fetch("/write/", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                file: file,
+                remIndexes: remIndexes
+            })
+        });
+    };
     return (
         <div className="App">
             <header className="App-header">
                 {!context && "Loading Canvas..."}
-                {payload?.score}
-                <canvas width="1000" height="1000" id="canvas" onClick={(e) => {
-                    if (!context) return;
-                    const X = e.clientX - context.canvas.getBoundingClientRect().left;
-                    const Y = e.clientY - context.canvas.getBoundingClientRect().top;
-                    console.log(X, Y);
-                    const selectedRects = (payload?.rects ?? [])
-                        .filter(r => {
-                            if (r.l / 10 - 1 <= X && X <= r.r / 10 + 1) {
-                                if (r.d / 10 - 1 <= Y && Y <= r.u / 10 + 1) {
-                                    return true;
+                <p>{payload?.score}</p>
+                <canvas width="1000" height="1000" id="canvas"
+                        onMouseDown={(e) => {
+                            if (!context) return;
+                            const X = e.clientX - context.canvas.getBoundingClientRect().left;
+                            const Y = e.clientY - context.canvas.getBoundingClientRect().top;
+                            setStartPoint({
+                                x: X,
+                                y: Y
+                            });
+                        }}
+
+                        onMouseMove={(e) => {
+                            if (!context) return;
+
+                            const X = e.clientX - context.canvas.getBoundingClientRect().left;
+                            const Y = e.clientY - context.canvas.getBoundingClientRect().top;
+                            if (startPoint != null) {
+                                setEndPoint({
+                                    x: X,
+                                    y: Y
+                                })
+                            }
+                        }}
+
+                        onMouseUp={async (e) => {
+                            if (!context) return;
+
+                            if (startPoint && endPoint) {
+                                const selectedPoints = (payload?.rects ?? [])
+                                    .filter(r_ => {
+                                        const r = {...r_};
+                                        r.l /= 10;
+                                        r.r /= 10;
+                                        r.d /= 10;
+                                        r.u /= 10;
+                                        const L = Math.min(startPoint.x, endPoint.x);
+                                        const R = Math.max(startPoint.x, endPoint.x);
+                                        const D = Math.min(startPoint.y, endPoint.y);
+                                        const U = Math.max(startPoint.y, endPoint.y);
+                                        if( Math.min(r.r, R) - Math.max(r.l, L) > 0 ){
+                                            if( Math.min(r.u, U) - Math.max(r.d, D) > 0 ){
+                                                return true;
+                                            }
+                                        }
+                                        return false;
+                                    });
+                                if (communicationFile != null) {
+                                    sendRemoveRequest(communicationFile, selectedPoints.map(r => r.id));
                                 }
                             }
-                            return false;
-                        });
-                    setSelectedRectangles(selectedRects);
-                }}/>
+                            setStartPoint(null);
+                            setEndPoint(null);
+                        }}
+
+                        onDoubleClick={async (e) => {
+                            if (!context) return;
+                            const X = e.clientX - context.canvas.getBoundingClientRect().left;
+                            const Y = e.clientY - context.canvas.getBoundingClientRect().top;
+                            const selectedRects = (payload?.rects ?? [])
+                                .filter(r => {
+                                    if (r.l / 10 - 1 <= X && X <= r.r / 10 + 1) {
+                                        if (r.d / 10 - 1 <= Y && Y <= r.u / 10 + 1) {
+                                            return true;
+                                        }
+                                    }
+                                    return false;
+                                });
+                            setSelectedRectangles(selectedRects);
+                        }}
+                        // onClick={async (e) => {
+                        //     if (!context) return;
+                        //     const X = e.clientX - context.canvas.getBoundingClientRect().left;
+                        //     const Y = e.clientY - context.canvas.getBoundingClientRect().top;
+                        //     const selectedRects = (payload?.rects ?? [])
+                        //         .filter(r => {
+                        //             if (r.l / 10 - 1 <= X && X <= r.r / 10 + 1) {
+                        //                 if (r.d / 10 - 1 <= Y && Y <= r.u / 10 + 1) {
+                        //                     return true;
+                        //                 }
+                        //             }
+                        //             return false;
+                        //         });
+                        //     if (communicationFile != null) {
+                        //         await sendRemoveRequest(communicationFile, selectedRects.map(r => r.id));
+                        //     }
+                        // }}
+                />
+                <p> Communication File: {communicationFile}</p>
                 <p> Clicked size: {selectedRectangles.length}</p>
                 <ul>
                     {selectedRectangles.map(r_ => {

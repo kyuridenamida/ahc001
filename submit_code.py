@@ -6,7 +6,7 @@ def removeDebugCode(src):
     lines = src.split("\n")
     res = []
     for l in lines:
-        if "emitJson" in l or '#include "' in l:
+        if "emitJson(" in l or '#include "' in l or ("emitJsonWithTimer(" in l and "void" not in l) or "cerr" in l:
             print(f"Warn: The following Line  will be remove! [{l}]", file=sys.stderr)
         else:
             res += [l]
