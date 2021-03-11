@@ -431,6 +431,10 @@ bool overlap(int a, int b, int A, int B) {
     return true;
 }
 
+int overlapLength(int a, int b, int A, int B) {
+    return max(min(b, B) - max(a, A), 0);
+}
+
 inline bool eq(int a, int b) {
     return a == b;
 }
@@ -477,13 +481,24 @@ double realScore(vector<GeoRect> rects, const Input &input) {
     return ans / rects.size();
 }
 
-double score(vector<GeoRect> rects, const Input &input) {
+double score(vector<GeoRect> rects, const Input &input, bool penSwitch) {
     double ans = 0;
+    double penalty = 0;
     for (int i = 0; i < rects.size(); i++) {
         double h = 1 - 1. * min(rects[i].area(), input.advs[i].r) / max(rects[i].area(), input.advs[i].r);
         ans += (1 - h * h);
+
     }
-    return ans / rects.size();
+//    for (int i = 0; i < rects.size(); i++) {
+//        for (int j = i + 1; j < rects.size(); j++) {
+//            if (i != j) {
+//                int X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
+//                int Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
+//                penalty += 1.0 * (X * Y) / min(rects[i].area(), rects[j].area());
+//            }
+//        }
+//    }
+    return ans / rects.size() - penalty * 1000;
 }
 
 vector<GeoRect> fixit(vector<GeoRect> rects, const Input &input, int targetIndex, int dir) {
@@ -513,12 +528,6 @@ vector<GeoRect> fixit(vector<GeoRect> rects, const Input &input, int targetIndex
     }
 
     for (int i = 0; i < rects.size(); i++) {
-        if (rects[i].l > rects[i].r)
-            swap(rects[i].l, rects[i].r);
-        if (rects[i].d > rects[i].u)
-            swap(rects[i].u, rects[i].d);
-    }
-    for (int i = 0; i < rects.size(); i++) {
         auto q = input.advs[i].p;
         rects[i].l = min<int>(rects[i].l, q.x);
         rects[i].r = max<int>(rects[i].r, q.x + 1);
@@ -526,22 +535,66 @@ vector<GeoRect> fixit(vector<GeoRect> rects, const Input &input, int targetIndex
         rects[i].u = max<int>(rects[i].u, q.y + 1);
     }
 
-    for (int j = 0; j < rects.size(); j++) {
-        if (rects[j].area() == 0) {
-            return {};
-        }
-        if (targetIndex != j) {
-            bool X = overlap(rects[targetIndex].l, rects[targetIndex].r, rects[j].l, rects[j].r);
-            bool Y = overlap(rects[targetIndex].d, rects[targetIndex].u, rects[j].d, rects[j].u);
-            if (X && Y) {
-                return {};
-            }
-        }
-    }
+//    for (int j = 0; j < rects.size(); j++) {
+//        if (rects[j].area() == 0) {
+//            return {};
+//        }
+//        if (targetIndex != j) {
+//            bool X = overlap(rects[targetIndex].l, rects[targetIndex].r, rects[j].l, rects[j].r);
+//            bool Y = overlap(rects[targetIndex].d, rects[targetIndex].u, rects[j].d, rects[j].u);
+//            if (X && Y) {
+//                return {};
+//            }
+//        }
+//    }
 
     return rects;
 }
 
+string globalCommunicationFile;
+
+void registerCommunicationFile(const string communicationFile) {
+    auto quoted = [&](string key) {
+        return "\"" + key + "\"";
+    };
+    stringstream ss;
+    ss << "{"
+       << quoted("type") << ":" << quoted("communication") << ","
+       << quoted("file") << ":" << quoted(communicationFile)
+       << "}";
+    globalCommunicationFile = communicationFile;
+}
+
+vector<int> removeIndexes() {
+    registerCommunicationFile(globalCommunicationFile);
+    ifstream ifs(globalCommunicationFile);
+    if (!ifs.is_open()) {
+        return {};
+    };
+    vector<int> indexes;
+    int idx;
+    while (ifs >> idx) {
+        indexes.push_back(idx);
+    }
+    ifs.close();
+
+    ofstream ofs(globalCommunicationFile);
+    ofs.close();
+
+    return indexes;
+}
+
+double _lstsub2 = -1;
+
+vector<int> removeIndexesWithTimer() {
+    double now = timer.time_elapsed();
+    if (now - _lstsub2 > 0.2) {
+        auto array = removeIndexes();
+        _lstsub2 = now;
+        return array;
+    }
+    return {};
+}
 
 string createJson(vector<GeoRect> rects, double score, Input input) {
     auto quoted = [&](string key) {
@@ -576,6 +629,7 @@ string createJson(vector<GeoRect> rects, double score, Input input) {
         ss << f(rects[i], i);
     }
     ss << "],\n";
+    ss << quoted("type") << ":" << quoted("draw") << ",\n";
     ss << quoted("score") << ": " << score << "\n";
     ss << "}";
     return ss.str();
@@ -614,12 +668,15 @@ public:
             rects.emplace_back(a.p.x, a.p.x + 1, a.p.y, a.p.y + 1);
         }
 
-        double currentScore = score(rects, input);
+        double currentScore = score(rects, input, true);
         double bestScore = realScore(rects, input);
         vector<GeoRect> bestRects;
 
-        double t = 0.00001;
+        double t = 0.0001;
+        int iter = 0;
         while (!timer.is_TLE()) {
+            iter++;
+//            t = max(t, 0.0001);
             int cap = 100;
             bool force = false;
             vector<GeoRect> r = rects;
@@ -628,7 +685,6 @@ public:
                 int dir = rand() % 4;
 
                 double needArea = input.advs[idx].r - r[idx].area();
-                needArea *= 0.1;
                 int rrr = rand() % 3;
                 if (rrr == 0) {
                     int x = random(1, 100);
@@ -655,7 +711,7 @@ public:
 
                 } else if (rrr == 1) {
                     if (dir == 0 || dir == 1) {
-                        int needLength = random(1, 20);
+                        int needLength = random(1, 100);
                         if (dir == 0) {
                             // 左伸ばす
                             r[idx].l -= needLength;
@@ -664,7 +720,7 @@ public:
                             r[idx].r += needLength;
                         }
                     } else {
-                        int needLength = random(1, 20);
+                        int needLength = random(1, 100);
                         if (dir == 2) {
                             // した伸ばす
                             r[idx].d -= needLength;
@@ -673,7 +729,8 @@ public:
                             r[idx].u += needLength;
                         }
                     }
-                } else {
+                }
+                else {
                     if (dir == 0 || dir == 1) {
                         int needLength = min(cap, ceil(needArea, (r[idx].u - r[idx].d)));
                         if (dir == 0) {
@@ -697,9 +754,22 @@ public:
                 r = fixit(r, input, idx, dir);
                 if (r.size() == 0) break;
             }
+
+
             if (r.size() == 0) continue;
 
-            double nextScore = score(r, input);
+            auto remIndexes = removeIndexesWithTimer();
+            for (auto remi : remIndexes) {
+                auto q = input.advs[remi].p;
+                r[remi].l = q.x;
+                r[remi].r = q.x + 1;
+                r[remi].d = q.y;
+                r[remi].u = q.y + 1;
+                force = true;
+            }
+            r = fixit(r, input, idx, 0);
+
+            double nextScore = score(r, input, timer.relative_time_elapsed() < 0.8);
 
 //            if( nextScore >= currentScore){
             double p = 1. * random() / RAND_MAX;
@@ -712,28 +782,37 @@ public:
                     bestScore = real;
                     bestRects = rects;
                 }
-
             }
-//            t *= 0.99997;
+            t *= 0.99997;
         }
         // TODO: 明日へのTODO 当たり判定もしくは不正box修正アルゴリズムバグってない?
         // TODO: あとでかすぎるやつ検出する
         // TODO: かぶりを消すロジックがしょぼい
+        // TODO: 絶対にたどり着けない頂点に対しては当たり判定チェックしない
+        cout << iter << endl;
         return createOutput(bestRects, input);
     }
 };
 
+string itos(int n) {
+    stringstream ss;
+    ss << n;
+    return ss.str();
+}
 
 int main() {
-    srand(2);
+    srand(time(NULL));
+    const string communicationFile = "/tmp/" + itos(rand() % 100000) + ".com";
+    registerCommunicationFile(communicationFile);
+    srand(10);
 #ifdef CLION
-    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/input/seed0.txt");
+    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0098.txt");
     const Input input = Input::fromInputStream(inputSrc);
 #else
     const Input input = Input::fromInputStream(cin);
 #endif
 
     auto sol = PhysicsSolver().solve(input);
-    sol.output(cout);
+//    sol.output(cout);
 }
 

@@ -8,7 +8,7 @@
 
 using namespace std;
 
-RealTimer timer(1200.0);
+RealTimer timer(5.0);
 
 typedef complex<double> GeoPoint;
 typedef GeoPoint V;
@@ -22,6 +22,10 @@ bool overlap(int a, int b, int A, int B) {
         return false;
     }
     return true;
+}
+
+int overlapLength(int a, int b, int A, int B) {
+    return max(min(b, B) - max(a, A), 0);
 }
 
 inline bool eq(int a, int b) {
@@ -76,15 +80,18 @@ double score(vector<GeoRect> rects, const Input &input, bool penSwitch) {
     for (int i = 0; i < rects.size(); i++) {
         double h = 1 - 1. * min(rects[i].area(), input.advs[i].r) / max(rects[i].area(), input.advs[i].r);
         ans += (1 - h * h);
-        double len1 = (rects[i].r - rects[i].l);
-        double len2 = (rects[i].u - rects[i].d);
-        double area = len1 * len2;
-        double w = (len1 + len2) / (2 * sqrt(area)) - 1;;
-//        penalty += (len1 + len2) / (2 * sqrt(area)) - 1;
-//        penalty
-
     }
-    return ans / rects.size();//;- penSwitch * penalty / rects.size() * 0.001;
+    for (int i = 0; i < rects.size(); i++) {
+        for (int j = i + 1; j < rects.size(); j++) {
+            if (i != j) {
+                int X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
+                int Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
+                penalty += 1.0 * (X * Y) / min(rects[i].area(), rects[j].area());
+            }
+        }
+    }
+    cerr << penalty << endl;
+    return ans / rects.size() - penalty * 1000;
 }
 
 vector<GeoRect> fixit(vector<GeoRect> rects, const Input &input, int targetIndex, int dir) {
@@ -113,53 +120,26 @@ vector<GeoRect> fixit(vector<GeoRect> rects, const Input &input, int targetIndex
         rects[i].u = min(10000, rects[i].u);
     }
 
-//    for (int i = 0; i < rects.size(); i++) {
-//        if (rects[i].l > rects[i].r)
-//            swap(rects[i].l, rects[i].r);
-//        if (rects[i].d > rects[i].u)
-//            swap(rects[i].u, rects[i].d);
-//    }
     for (int i = 0; i < rects.size(); i++) {
         auto q = input.advs[i].p;
-//        bool bad = false;
-//        if (q.x < rects[i].l) {
-//            bad = true;
-//        }
-//        if (q.x >= rects[i].r) {
-//            bad = true;
-//        }
-//        if (q.y >= rects[i].u) {
-//            bad = true;
-//        }
-//
-//        if (q.y < rects[i].d) {
-//            bad = true;
-//        }
-//        if (bad) {
-//            rects[i].l = q.x;
-//            rects[i].r = q.x + 1;
-//            rects[i].d = q.y;
-//            rects[i].u = q.y + 1;
-//        }
-
         rects[i].l = min<int>(rects[i].l, q.x);
         rects[i].r = max<int>(rects[i].r, q.x + 1);
         rects[i].d = min<int>(rects[i].d, q.y);
         rects[i].u = max<int>(rects[i].u, q.y + 1);
     }
 
-    for (int j = 0; j < rects.size(); j++) {
-        if (rects[j].area() == 0) {
-            return {};
-        }
-        if (targetIndex != j) {
-            bool X = overlap(rects[targetIndex].l, rects[targetIndex].r, rects[j].l, rects[j].r);
-            bool Y = overlap(rects[targetIndex].d, rects[targetIndex].u, rects[j].d, rects[j].u);
-            if (X && Y) {
-                return {};
-            }
-        }
-    }
+//    for (int j = 0; j < rects.size(); j++) {
+//        if (rects[j].area() == 0) {
+//            return {};
+//        }
+//        if (targetIndex != j) {
+//            bool X = overlap(rects[targetIndex].l, rects[targetIndex].r, rects[j].l, rects[j].r);
+//            bool Y = overlap(rects[targetIndex].d, rects[targetIndex].u, rects[j].d, rects[j].u);
+//            if (X && Y) {
+//                return {};
+//            }
+//        }
+//    }
 
     return rects;
 }
@@ -290,8 +270,11 @@ public:
         double bestScore = realScore(rects, input);
         vector<GeoRect> bestRects;
 
-        double t = 0.01;
+        double t = 0.0001;
+        int iter = 0;
         while (!timer.is_TLE()) {
+            iter++;
+//            t = max(t, 0.0001);
             int cap = 100;
             bool force = false;
             vector<GeoRect> r = rects;
@@ -300,7 +283,6 @@ public:
                 int dir = rand() % 4;
 
                 double needArea = input.advs[idx].r - r[idx].area();
-                needArea *= 0.1;
                 int rrr = rand() % 3;
                 if (rrr == 0) {
                     int x = random(1, 100);
@@ -327,7 +309,7 @@ public:
 
                 } else if (rrr == 1) {
                     if (dir == 0 || dir == 1) {
-                        int needLength = random(1, 20);
+                        int needLength = random(1, 100);
                         if (dir == 0) {
                             // 左伸ばす
                             r[idx].l -= needLength;
@@ -336,7 +318,7 @@ public:
                             r[idx].r += needLength;
                         }
                     } else {
-                        int needLength = random(1, 20);
+                        int needLength = random(1, 100);
                         if (dir == 2) {
                             // した伸ばす
                             r[idx].d -= needLength;
@@ -345,7 +327,8 @@ public:
                             r[idx].u += needLength;
                         }
                     }
-                } else {
+                }
+                else {
                     if (dir == 0 || dir == 1) {
                         int needLength = min(cap, ceil(needArea, (r[idx].u - r[idx].d)));
                         if (dir == 0) {
@@ -407,6 +390,7 @@ public:
         // TODO: あとでかすぎるやつ検出する
         // TODO: かぶりを消すロジックがしょぼい
         // TODO: 絶対にたどり着けない頂点に対しては当たり判定チェックしない
+        cout << iter << endl;
         return createOutput(bestRects, input);
     }
 };
@@ -431,6 +415,6 @@ int main() {
 
 //    input.outputToStream(cerr);
     auto sol = PhysicsSolver().solve(input);
-    sol.output(cout);
+//    sol.output(cout);
 //    cerr << sol.relativeScore() << endl;
 }
