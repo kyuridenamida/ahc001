@@ -1,6 +1,6 @@
 set -eu
 python3 submit_code.py > /tmp/src.cpp
-rm -r /tmp/ahc001.out
+rm -rf /tmp/ahc001.out
 g++ /tmp/src.cpp -O3 -o /tmp/ahc001.out
 #g++ ./src/main.cpp -O3 -o /tmp/ahc001.out
 prefix=${1}
