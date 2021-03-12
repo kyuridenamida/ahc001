@@ -344,6 +344,303 @@ public:
 #endif //AHC001_SOLUTION_H
 
 //
+// Created by kyuridenamida on 2021/03/09.
+//
+
+#ifndef AHC001_VISCLIENT_H
+#define AHC001_VISCLIENT_H
+
+
+
+/**
+ * Modified by kyuridenamida to enable POST sending.
+ */
+/*
+  picohttpclient.hpp ... generic, lightweight HTTP 1.1 client
+  ... no complex features, no chunking, no ssl, no keepalive ...
+  ... not very tested, use at your own risk!
+  ... it PURPOSELY does not use any feature-complete libraries
+      (like cURL) to stay lean and header-only.
+  ... it does not use C++11 features to fit well in legacy code bases
+  ... it has some suboptimal properties (like many string copy ops)
+  The MIT License
+  Copyright (c) 2016 Christian C. Sachs
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+  THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+*/
+
+#include <iostream>
+#include <string>
+#include <map>
+#include <vector>
+#include <cstring>
+#include <sstream>
+
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+
+// possibly add SSL?
+// https://wiki.openssl.org/index.php/SSL/TLS_Client
+
+using namespace std;
+
+class tokenizer {
+public:
+    inline tokenizer(string &str) : str(str), position(0){};
+
+    inline string next(string search, bool returnTail = false) {
+        size_t hit = str.find(search, position);
+        if (hit == string::npos) {
+            if (returnTail) {
+                return tail();
+            } else {
+                return "";
+            }
+        }
+
+        size_t oldPosition = position;
+        position = hit + search.length();
+
+        return str.substr(oldPosition, hit - oldPosition);
+    };
+
+    inline string tail() {
+        size_t oldPosition = position;
+        position = str.length();
+        return str.substr(oldPosition);
+    };
+
+private:
+    string str;
+    size_t position;
+};
+
+typedef map<string, string> stringMap;
+
+struct URI {
+    inline void parseParameters() {
+        tokenizer qt(querystring);
+        do {
+            string key = qt.next("=");
+            if (key == "")
+                break;
+            parameters[key] = qt.next("&", true);
+        } while (true);
+    }
+
+    inline URI(string input, bool shouldParseParameters = false) {
+        tokenizer t = tokenizer(input);
+        protocol = t.next("://");
+        string hostPortString = t.next("/");
+
+        tokenizer hostPort(hostPortString);
+
+        host = hostPort.next(hostPortString[0] == '[' ? "]:" : ":", true);
+
+        if (host[0] == '[')
+            host = host.substr(1, host.size() - 1);
+
+        port = hostPort.tail();
+
+        address = t.next("?", true);
+        querystring = t.next("#", true);
+
+        hash = t.tail();
+
+        if (shouldParseParameters) {
+            parseParameters();
+        }
+    };
+
+    string protocol, host, port, address, querystring, hash;
+    stringMap parameters;
+};
+
+struct HTTPResponse {
+    bool success;
+    string protocol;
+    string response;
+    string responseString;
+
+    stringMap header;
+
+    string body;
+
+    inline HTTPResponse() : success(true){};
+    inline static HTTPResponse fail() {
+        HTTPResponse result;
+        result.success = false;
+        return result;
+    }
+};
+
+struct HTTPClient {
+    typedef enum {
+        OPTIONS = 0,
+        GET,
+        HEAD,
+        POST,
+        PUT,
+        DELETE,
+        TRACE,
+        CONNECT
+    } HTTPMethod;
+
+    inline static const char *method2string(HTTPMethod method) {
+        const char *methods[] = {"OPTIONS", "GET",   "HEAD",    "POST", "PUT",
+                                 "DELETE",  "TRACE", "CONNECT", NULL};
+        return methods[method];
+    };
+
+    inline static int connectToURI(URI uri) {
+        struct addrinfo hints, *result, *rp;
+
+        memset(&hints, 0, sizeof(addrinfo));
+
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+
+        if (uri.port == "") {
+            uri.port = "80";
+        }
+
+        int getaddrinfo_result =
+                getaddrinfo(uri.host.c_str(), uri.port.c_str(), &hints, &result);
+
+        if (getaddrinfo_result != 0)
+            return -1;
+
+        int fd = -1;
+
+        for (rp = result; rp != NULL; rp = rp->ai_next) {
+
+            fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+
+            if (fd == -1) {
+                continue;
+            }
+
+            int connect_result = connect(fd, rp->ai_addr, rp->ai_addrlen);
+
+            if (connect_result == -1) {
+                // successfully created a socket, but connection failed. close it!
+                close(fd);
+                fd = -1;
+                continue;
+            }
+
+            break;
+        }
+
+        freeaddrinfo(result);
+
+        return fd;
+    };
+
+    inline static string bufferedRead(int fd) {
+        size_t initial_factor = 4, buffer_increment_size = 8192, buffer_size = 0,
+                bytes_read = 0;
+        string buffer;
+
+        buffer.resize(initial_factor * buffer_increment_size);
+
+        do {
+            bytes_read = read(fd, ((char *)buffer.c_str()) + buffer_size,
+                              buffer.size() - buffer_size);
+
+            buffer_size += bytes_read;
+
+            if (bytes_read > 0 &&
+                (buffer.size() - buffer_size) < buffer_increment_size) {
+                buffer.resize(buffer.size() + buffer_increment_size);
+            }
+        } while (bytes_read > 0);
+
+        buffer.resize(buffer_size);
+        return buffer;
+    };
+
+
+
+    inline static HTTPResponse request(HTTPMethod method, URI uri, string bodyJson) {
+#define HTTP_NEWLINE "\r\n"
+#define HTTP_SPACE " "
+#define HTTP_HEADER_SEPARATOR ": "
+
+        int fd = connectToURI(uri);
+        if (fd < 0)
+            return HTTPResponse::fail();
+
+        string request = string(method2string(method)) + string(" /") +
+                         uri.address + ((uri.querystring == "") ? "" : "?") +
+                         uri.querystring + " HTTP/1.1" HTTP_NEWLINE "Host: " +
+                         uri.host + HTTP_NEWLINE
+                                    "Accept: */*" HTTP_NEWLINE
+                                    "Connection: close" HTTP_NEWLINE
+                                    "Content-Length: " + itos(bodyJson.size()) + HTTP_NEWLINE
+                                    "Content-Type: application/json" HTTP_NEWLINE HTTP_NEWLINE;
+        request += bodyJson;
+        int bytes_written = write(fd, request.c_str(), request.size());
+        string buffer = bufferedRead(fd);
+
+        close(fd);
+
+        HTTPResponse result;
+
+        tokenizer bt(buffer);
+
+        result.protocol = bt.next(HTTP_SPACE);
+        result.response = bt.next(HTTP_SPACE);
+        result.responseString = bt.next(HTTP_NEWLINE);
+
+        string header = bt.next(HTTP_NEWLINE HTTP_NEWLINE);
+
+        result.body = bt.tail();
+
+        tokenizer ht(header);
+
+        do {
+            string key = ht.next(HTTP_HEADER_SEPARATOR);
+            if (key == "")
+                break;
+            result.header[key] = ht.next(HTTP_NEWLINE, true);
+        } while (true);
+
+        return result;
+    };
+private:
+
+    static string itos(int n){
+        stringstream ss;
+        ss << n;
+        return ss.str();
+    }
+};
+void emitJson(const string &jsonString) {
+    HTTPResponse response = HTTPClient::request(HTTPClient::POST, URI("http://localhost:8888/json/"), jsonString);
+    if(!response.success){
+        cerr << "Failed to send request" << endl;
+    }
+}
+
+#endif //AHC001_VISCLIENT_H
+
+//
 // Created by kyuridenamida on 2021/03/10.
 //
 
@@ -483,13 +780,16 @@ void registerCommunicationFile(const string communicationFile) {
        << quoted("type") << ":" << quoted("communication") << ","
        << quoted("file") << ":" << quoted(communicationFile)
        << "}";
+    emitJson(ss.str());
     globalCommunicationFile = communicationFile;
 }
 
 vector<int> removeIndexes() {
     registerCommunicationFile(globalCommunicationFile);
+    cerr << "Communicating...";
     ifstream ifs(globalCommunicationFile);
     if (!ifs.is_open()) {
+        cerr << "no file found yet." << endl;
         return {};
     };
     vector<int> indexes;
@@ -498,6 +798,7 @@ vector<int> removeIndexes() {
         indexes.push_back(idx);
     }
     ifs.close();
+    cerr << " and you have " << indexes.size() << " delete indexes" << endl;
 
     ofstream ofs(globalCommunicationFile);
     ofs.close();
@@ -576,8 +877,18 @@ double _lstsub = -1;
 void emitJsonWithTimer(vector<GeoRect> rects, double s, Input input) {
     double now = timer.time_elapsed();
     if (now - _lstsub > 0.1) {
+        emitJson(createJson(rects, s, input));
         _lstsub = now;
     }
+}
+
+inline GeoRect shrink(GeoRect rIdx, const Adv &adv) {
+    auto q = adv.p;
+    rIdx.l = q.x;
+    rIdx.r = q.x + 1;
+    rIdx.d = q.y;
+    rIdx.u = q.y + 1;
+    return rIdx;
 }
 
 
@@ -586,27 +897,22 @@ struct RectSet {
     vector<GeoRect> rects;
     vector<Adv> advs;
     double realScore;
-    double penaltyScore;
 
     bool rollbackable = true;
-    GeoRect prevRect;
+    vector<pair<int, GeoRect> > prevItems;
     double prevRealScore;
-    double prevPenaltyScore;
-
-    int prevIdex;
 
     void init(vector<GeoRect> rects, vector<Adv> advs) {
         this->n = rects.size();
         this->rects = rects;
         this->advs = advs;
         this->realScore = realScoreFull();
-        this->penaltyScore = penaltyScoreFull();
         this->rollbackable = false;
     }
 
     inline double individualRealScore(int i) {
         double h = 1 - 1. * min(rects[i].area(), advs[i].r) / max(rects[i].area(), advs[i].r);
-        return 1 - h * h;
+        return (1 - h * h) / n;
     }
 
     double realScoreFull() {
@@ -614,65 +920,68 @@ struct RectSet {
         for (int i = 0; i < rects.size(); i++) {
             ans += individualRealScore(i);
         }
-        return ans / n;
+        return ans;
     }
 
     double score() {
-        return strictScore();
-        if (timer.relative_time_elapsed() > 0.8) {
-            return strictScore();
-        }
-//        return realScore - 100000.0 * (penaltyScore > 0);
-
-        return realScore - 10 * penaltyScore / n;
+        return realScore;
     }
 
     double strictScore() {
-        return realScore - 1000.0 * (penaltyScore > 0);
-
-//        return realScore - 10 * penaltyScore / n;
+        return realScore;
     }
 
 
-    double penaltyScoreFull() {
-        double penalty = 0;
-        for (int i = 0; i < rects.size(); i++) {
-            for (int j = 0; j < rects.size(); j++) {
-                if (i != j) {
-                    int X = overlapLength(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
-                    int Y = overlapLength(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
-                    penalty += 1.0 * (X * Y) / min(rects[i].area(), rects[j].area());
+    void update(int i, const GeoRect &geoRect_, int dir) {
+        auto geoRect = normalizedRect(geoRect_, i);
+        prevItems.clear();
+        prevItems.emplace_back(i, rects[i]);
+        prevRealScore = realScore;
+        rollbackable = true;
+
+        realScore -= individualRealScore(i);
+        rects[i] = geoRect;
+        realScore += individualRealScore(i);
+
+        for (int j = 0; j < rects.size(); j++) {
+            if (i != j) {
+                bool X = overlap(geoRect_.l, geoRect_.r, rects[j].l, rects[j].r);
+                bool Y = overlap(geoRect_.d, geoRect_.u, rects[j].d, rects[j].u);
+                if (X && Y) {
+                    prevItems.emplace_back(j, rects[j]);
+                    realScore -= individualRealScore(j);
+                    if (dir == 0) {
+                        rects[j].r = geoRect_.l;
+                    } else if (dir == 1) {
+                        rects[j].l = geoRect_.r;
+                    } else if (dir == 2) {
+                        rects[j].u = geoRect_.d;
+                    } else if (dir == 3) {
+                        rects[j].d = geoRect_.u;
+                    }
+                    rects[j] = normalizedRect(rects[j], j);
+
+                    realScore += individualRealScore(j);
                 }
             }
         }
-        return penalty / 2; // Why you need divide?
-    }
-
-    void update(int i, const GeoRect &geoRect_) {
-        auto geoRect = normalizedRect(geoRect_, i);
-        prevRect = rects[i];
-        prevRealScore = realScore;
-        prevPenaltyScore = penaltyScore;
-        prevIdex = i;
-        rollbackable = true;
-
+        bool bad = false;
         for (int j = 0; j < rects.size(); j++) {
+            if (rects[j].area() == 0) {
+                bad = true;
+            }
             if (i != j) {
-                int X = overlapLength(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
-                int Y = overlapLength(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
-                penaltyScore -= 1.0 * (X * Y) / min(rects[i].area(), rects[j].area());
+                bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
+                bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
+                if (X && Y) {
+                    bad = true;
+                }
             }
         }
-        realScore -= individualRealScore(i) / n;
-        rects[i] = geoRect;
-        realScore += individualRealScore(i) / n;
-        for (int j = 0; j < rects.size(); j++) {
-            if (i != j) {
-                int X = overlapLength(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
-                int Y = overlapLength(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
-                penaltyScore += 1.0 * (X * Y) / min(rects[i].area(), rects[j].area());
-            }
+        if (bad) {
+            realScore = -100000000;
         }
+
 
     }
 
@@ -692,16 +1001,17 @@ struct RectSet {
 
     void rollBack() {
         assert(rollbackable);
-        penaltyScore = prevPenaltyScore;
         realScore = prevRealScore;
-        rects[prevIdex] = prevRect;
+        for (auto &&i : prevItems) {
+            rects[i.first] = i.second;
+        }
         rollbackable = false;
     }
 };
 
-inline GeoRect transform1(GeoRect rIdx) {
+inline GeoRect transform1(GeoRect rIdx, int &dir_dest) {
     int dir = rand() % 4;
-    int x = random(-10, 100);
+    int x = random(-100, 100);
     if (dir == 0 || dir == 1) {
         if (dir == 0) {
             // 左伸ばす
@@ -722,36 +1032,13 @@ inline GeoRect transform1(GeoRect rIdx) {
             rIdx.u += x;
         }
     }
+    dir_dest = dir;
     return rIdx;
 }
 
-inline GeoRect transform2(GeoRect rIdx) {
-    int dir = rand() % 4;
-    if (dir == 0 || dir == 1) {
-        int needLength = random(-10, 100);
-        if (dir == 0) {
-            // 左伸ばす
-            rIdx.l -= needLength;
-        } else {
-            // 右伸ばす
-            rIdx.r += needLength;
-        }
-    } else {
-        int needLength = random(-10, 100);
-        if (dir == 2) {
-            // した伸ばす
-            rIdx.d -= needLength;
-        } else {
-            // うえ伸ばす
-            rIdx.u += needLength;
-        }
-    }
-    return rIdx;
-}
-
-inline GeoRect transform3(GeoRect rIdx, const Adv &adv) {
+inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest) {
     double needArea = adv.r - rIdx.area();
-    const int cap = 100;
+    const int cap = 10;
     int dir = rand() % 4;
     if (dir == 0 || dir == 1) {
         int needLength = min(cap, ceil(needArea, (rIdx.u - rIdx.d)));
@@ -772,18 +1059,10 @@ inline GeoRect transform3(GeoRect rIdx, const Adv &adv) {
             rIdx.u += needLength;
         }
     }
+    dir_dest = dir;
     return rIdx;
 }
 
-
-inline GeoRect shrink(GeoRect rIdx, const Adv &adv) {
-    auto q = adv.p;
-    rIdx.l = q.x;
-    rIdx.r = q.x + 1;
-    rIdx.d = q.y;
-    rIdx.u = q.y + 1;
-    return rIdx;
-}
 
 class PhysicsSolver : Solver {
 public:
@@ -794,11 +1073,9 @@ public:
         }
         RectSet globalBest;
         globalBest.init(rects, input.advs);
-
-        double t = 0.0001;
         int iter = 0;
 
-        auto attempt = [&](RectSet &rectSet, RectSet &bestRectSet, bool emit) {
+        auto attempt = [&](RectSet &rectSet, RectSet &bestRectSet, bool emit, double t) {
             const double currentScore = rectSet.score();
             iter++;
             auto remIndexes = removeIndexesWithTimer();
@@ -817,25 +1094,26 @@ public:
             } else {
                 int idx = rand() % input.n;
                 GeoRect rIdx = rectSet.rects[idx];
-                int rrr = rand() % 3;
+                int rrr = rand() % 2;
+                int dir = -1;
+
                 if (rrr == 0) {
-                    rIdx = transform1(rIdx);
-                } else if (rrr == 1) {
-                    rIdx = transform2(rIdx);
+                    rIdx = transform1(rIdx, dir);
                 } else {
-                    rIdx = transform3(rIdx, input.advs[idx]);
+                    rIdx = transform3(rIdx, input.advs[idx], dir);
                 }
-                rectSet.update(idx, rIdx);
+                rectSet.update(idx, rIdx, dir);
             }
             double nextScore = rectSet.score();
             double p = 1. * random() / RAND_MAX;
             bool ok = false;
             if (force || p < exp((nextScore - currentScore) / t)) {
                 if (rectSet.realScore > bestRectSet.realScore) {
-                    ok = true;
+                    ok = bestRectSet.realScore;
                     bestRectSet = rectSet;
                 }
                 if (emit) {
+                    emitJsonWithTimer(rectSet.rects, rectSet.realScore, input);
                 }
 
             } else {
@@ -844,30 +1122,36 @@ public:
             }
             return ok;
         };
+
+        int attemptCnt = 0;
         while (!timer.is_TLE()) {
+            if( attemptCnt > 3) break;
+            double t = 0.01;
             RectSet rectSet;
             rectSet.init(rects, input.advs);
             RectSet best = rectSet;
-
-            int failAttempt = 0;
-            for (int i = 0;; i++) {
-                bool f = attempt(rectSet, best, true);
-                if (!f) {
-                    failAttempt++;
-                } else {
-                    failAttempt = 0;
-                }
-                if (failAttempt > 100000) break;
+            int fail = 0;
+            while ( fail < 20000) {
+                bool ok = attempt(rectSet, best, true, t);
+                if (!ok) {
+                    fail++;
+                } else fail = 0;
+                t *= 0.99997;
             }
-            if( globalBest.strictScore() < best.strictScore() ){
+            if (globalBest.strictScore() < best.strictScore()) {
                 globalBest = best;
             }
-            cout << best.realScore << endl;
+            attemptCnt++;
         }
+
         // TODO: 明日へのTODO 当たり判定もしくは不正box修正アルゴリズムバグってない?
         // TODO: あとでかすぎるやつ検出する
         // TODO: かぶりを消すロジックがしょぼい
         // TODO: 絶対にたどり着けない頂点に対しては当たり判定チェックしない
+
+        // TODO: 縮めるときに他を持ってくる? 伸ばすのと等価だね
+        // TODO: プロダクションとテストでスコアが違うの、なんで?
+        cerr << globalBest.realScore << " " << attemptCnt << endl;
         return createOutput(globalBest.rects, input);
     }
 };
@@ -879,18 +1163,22 @@ string itos(int n) {
 }
 
 int main() {
+#ifdef CLION
     srand(time(NULL));
     const string communicationFile = "/tmp/" + itos(rand() % 100000) + ".com";
     registerCommunicationFile(communicationFile);
-    srand(10);
+#endif
+    srand(0);
 #ifdef CLION
-    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0091.txt");
+    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0002.txt");
     const Input input = Input::fromInputStream(inputSrc);
 #else
     const Input input = Input::fromInputStream(cin);
 #endif
 
+//    input.outputToStream(cerr);
     auto sol = PhysicsSolver().solve(input);
     sol.output(cout);
+//    cerr << sol.relativeScore() << endl;
 }
 
