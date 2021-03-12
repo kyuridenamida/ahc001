@@ -179,7 +179,7 @@ public:
 
 class RealTimer : Timer {
 private:
-    const static unsigned long long int cycle_per_sec = 2800000000;
+    const static unsigned long long int cycle_per_sec = 2950000000;
     unsigned long long int begin_cycle;
     double time_limit;
     bool is_time_limit_existing;
@@ -494,7 +494,6 @@ inline GeoRect shrink(GeoRect rIdx, const Adv &adv) {
     return rIdx;
 }
 
-
 struct RectSet {
 private:
     double realScore;
@@ -538,7 +537,9 @@ public:
     }
 
 
-    void update(int i, const GeoRect &geoRect_, int dir) {
+    void update(int i, const GeoRect &geoRect_, int dir, int diff) {
+        if( diff == 0 )
+            return;
         auto geoRect = normalizedRect(geoRect_, i);
         prevItems.clear();
         prevItems.emplace_back(i, rects[i]);
@@ -581,9 +582,6 @@ public:
         }
         bool bad = false;
         for (int j = 0; j < n; j++) {
-            if (rects[j].area() == 0) {
-                bad = true;
-            }
             if (i != j) {
                 bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
                 bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
@@ -622,9 +620,9 @@ public:
     }
 };
 
-inline GeoRect transform1(GeoRect rIdx, int &dir_dest) {
-    int dir = xorShift.next_uint32(0, 5);
-    int x = xorShift.next_uint32(-100, 100);
+inline GeoRect transform1(GeoRect rIdx, int &dir_dest, int &diff) {
+    int dir = xorShift.next_uint32(0, 4);
+    int x = xorShift.next_uint32(-10, 100);
     if (dir == 0 || dir == 1) {
         if (dir == 0) {
             // 左伸ばす
@@ -645,11 +643,12 @@ inline GeoRect transform1(GeoRect rIdx, int &dir_dest) {
             rIdx.u += x;
         }
     }
+    diff = x;
     dir_dest = dir;
     return rIdx;
 }
 
-inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest) {
+inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest, int diff) {
     double needArea = adv.r - rIdx.area();
     const int cap = 10;
     int dir = xorShift.next_uint32(0, 8);
@@ -662,6 +661,7 @@ inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest) {
             // 右伸ばす
             rIdx.r += needLength;
         }
+        diff = needLength;
     } else if (dir == 2 || dir == 3) {
         int needLength = min(cap, ceil(needArea, (rIdx.r - rIdx.l)));
         if (dir == 2) {
@@ -671,26 +671,31 @@ inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest) {
             // うえ伸ばす
             rIdx.u += needLength;
         }
+        diff = needLength;
     } else if (dir == 4) {
         // 左したのばす
         int needLength = xorShift.next_uint32(1, 10);
         rIdx.l -= needLength;
         rIdx.d -= needLength;
+        diff = needLength;
     } else if (dir == 5) {
         // 右上のばす
         int needLength = xorShift.next_uint32(1, 10);
         rIdx.r += needLength;
         rIdx.u += needLength;
+        diff = needLength;
     } else if (dir == 6) {
         // 左上のばす
         int needLength = xorShift.next_uint32(1, 10);
         rIdx.l -= needLength;
         rIdx.u += needLength;
+        diff = needLength;
     } else if (dir == 7) {
         // 右下のばす
         int needLength = xorShift.next_uint32(1, 10);
         rIdx.r += needLength;
         rIdx.d -= needLength;
+        diff = needLength;
     }
     dir_dest = dir;
     return rIdx;
@@ -743,18 +748,19 @@ public:
                 GeoRect rIdx = rectSet.rects[idx];
                 int rrr = xorShift.next_uint32(0, 2);
                 int dir = -1;
+                int diff = -1;
                 if (rrr == 0) {
-                    rIdx = transform1(rIdx, dir);
+                    rIdx = transform1(rIdx, dir, diff);
                 } else {
-                    rIdx = transform3(rIdx, input.advs[idx], dir);
+                    rIdx = transform3(rIdx, input.advs[idx], dir, diff);
                 }
-                rectSet.update(idx, rIdx, dir);
+                rectSet.update(idx, rIdx, dir, diff);
 
             }
             double nextScore = rectSet.score();
             double p = xorShift.next_prob();
             bool ok = false;
-            if (force || p < exp((nextScore - currentScore) / t)) {
+            if (nextScore > 0 && (force || p < exp((nextScore - currentScore) / t))) {
 //            if (nextScore > currentScore) {
                 if (rectSet.getRealScore() > bestRectSet.getRealScore()) {
                     ok = true;
@@ -780,9 +786,9 @@ public:
                     start_temp +
                     timer.relative_time_elapsed() * (end_temp - start_temp);
             attempt(rectSet, globalBest, true, temp);
-        }
 
 
+        }dw
         //　TODO: 高速化 check herasu
 
 
@@ -794,6 +800,7 @@ public:
         // TODO: 縮めるときに他を持ってくる? 伸ばすのと等価だね
         // TODO: プロダクションとテストでスコアが違うの、なんで?
         // sanitizerまわりぽいなあ
+        cerr << iter << endl;
         return createOutput(globalBest.rects, input);
     }
 };
@@ -812,7 +819,7 @@ int main() {
 #endif
     srand(0);
 #ifdef CLION
-    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0030.txt");
+    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0098.txt");
     const Input input = Input::fromInputStream(inputSrc);
 #else
     const Input input = Input::fromInputStream(cin);

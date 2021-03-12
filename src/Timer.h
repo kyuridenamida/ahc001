@@ -26,7 +26,7 @@ public:
 
 class RealTimer : Timer {
 private:
-    const static unsigned long long int cycle_per_sec = 2800000000;
+    const static unsigned long long int cycle_per_sec = 2950000000;
     unsigned long long int begin_cycle;
     double time_limit;
     bool is_time_limit_existing;
