@@ -395,8 +395,8 @@ public:
             double nextScore = rectSet.score();
             double p = xorShift.next_prob();
             bool ok = false;
-//            if (force || p < exp((nextScore - currentScore) / t)) {
-            if (nextScore > currentScore) {
+            if (force || p < exp((nextScore - currentScore) / t)) {
+//            if (nextScore > currentScore) {
                 if (rectSet.realScore > bestRectSet.realScore) {
                     ok = bestRectSet.realScore;
                     bestRectSet = rectSet;
@@ -428,7 +428,6 @@ public:
             if (globalBest.score() < best.score()) {
                 globalBest = best;
             }
-            break;
         }
 
         // TODO: 明日へのTODO 当たり判定もしくは不正box修正アルゴリズムバグってない?

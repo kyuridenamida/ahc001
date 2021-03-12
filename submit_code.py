@@ -23,6 +23,7 @@ if __name__ == "__main__":
 
         src = replaceInclude(src, "./common.h")
         src = replaceInclude(src, "./Timer.h")
+        src = replaceInclude(src, "./xorshift.h")
         src = removeDebugCode(src)
 
         print(src)
