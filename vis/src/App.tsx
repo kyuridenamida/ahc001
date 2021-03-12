@@ -16,17 +16,17 @@ const contributionColor = (subScore: number, overallScore: number) => {
     }
 }
 
-const scoreToColor = (score: number) => {
+const scoreToColor = (score: number, trans: number) => {
     if (score <= 0.5) {
-        return "rgba(255, 64, 64, 1)";
+        return `rgba(255, 64, 64, ${trans})`;
     } else if (score <= 0.9) {
-        return "rgba(255, 128, 64, 1)";
+        return `rgba(255, 128, 64, ${trans})`;
     } else if (score <= 0.95) {
-        return "rgba(192, 192, 64, 1)";
+        return `rgba(192, 192, 64, ${trans})`;
     } else if (score <= 0.991) {
-        return "rgba(128, 255, 64, 1)";
+        return `rgba(128, 255, 64, ${trans})`;
     } else {
-        return "rgba(0, 128, 255, 1)";
+        return `rgba(0, 128, 255, ${trans})`;
     }
 }
 
@@ -58,7 +58,8 @@ function App() {
         payload.rects.forEach(
             (r_) => {
                 const rect = {...r_};
-                context.fillStyle = scoreToColor(rect.subScore);
+                let val = rect.need / 1000000;
+                context.fillStyle = scoreToColor(rect.subScore, val);
 
                 if (!(rect.l <= rect.px && rect.px < rect.r) || !(rect.d <= rect.py && rect.py < rect.u)) {
                     context.fillStyle = "gray";
@@ -92,7 +93,8 @@ function App() {
                 context.stroke();
 
                 context.fillStyle = "black";
-                context.fillText(`${Math.round(rect.subScore * 100) / 100}`, qx, qy);
+                context.fillText(`${Math.round(rect.subScore * 100) / 100}`, qx, qy + 10);
+                context.fillText(`${rect.need}`, qx, qy);
             }
         );
         if (startPoint && endPoint) {
@@ -188,6 +190,7 @@ function App() {
             <header className="App-header">
                 {!context && "Loading Canvas..."}
                 <p>{payload?.score}</p>
+                <p style={{color: "red"}}>{payload?.fakeScore}</p>
                 <canvas width="1000" height="1000" id="canvas"
                         onMouseDown={(e) => {
                             if (!context) return;

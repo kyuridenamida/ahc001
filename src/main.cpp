@@ -12,7 +12,7 @@ using namespace std;
 
 XorShift xorShift;
 
-RealTimer timer(5.0);
+RealTimer timer(10000);
 
 typedef complex<double> GeoPoint;
 typedef GeoPoint V;
@@ -25,8 +25,17 @@ bool overlap(int a, int b, int A, int B) {
     return true;
 }
 
+int overlapLength(int a, int b, int A, int B) {
+    return max(0, min(B, b) - max(a, A));
+}
+
 inline bool eq(int a, int b) {
     return a == b;
+}
+
+
+int ceil(int a, int b) {
+    return (a + b - 1) / b;
 }
 
 class GeoRect {
@@ -37,7 +46,7 @@ public:
     int d;
     int u;
 
-    GeoRect() { }
+    GeoRect() {}
 
     GeoRect(int l, int r, int d, int u) : l(l), r(r), d(d), u(u) {}
 
@@ -54,6 +63,35 @@ public:
 
     bool operator!=(const GeoRect &rhs) const {
         return !(rhs == *this);
+    }
+
+    GeoRect expand(int dir, const Adv &adv) {
+        if (l == r || u == d) {
+            return *this;
+        }
+        GeoRect rIdx = *this;
+        double needArea = adv.r - area();
+        const int cap = 10;
+        if (dir == 0 || dir == 1) {
+            int needLength = min(cap, ceil(needArea, (rIdx.u - rIdx.d)));
+            if (dir == 0) {
+                // 左伸ばす
+                rIdx.l -= needLength;
+            } else {
+                // 右伸ばす
+                rIdx.r += needLength;
+            }
+        } else {
+            int needLength = min(cap, ceil(needArea, (rIdx.r - rIdx.l)));
+            if (dir == 2) {
+                // した伸ばす
+                rIdx.d -= needLength;
+            } else {
+                // うえ伸ばす
+                rIdx.u += needLength;
+            }
+        }
+        return rIdx;
     }
 
     Rect toRect() {
@@ -89,7 +127,9 @@ vector<int> removeIndexes() {
     int idx;
     while (ifs >> idx) {
         indexes.push_back(idx);
+        cerr << idx << " ";
     }
+    cout << endl;
     ifs.close();
     cerr << " and you have " << indexes.size() << " delete indexes" << endl;
 
@@ -114,7 +154,7 @@ vector<int> removeIndexesWithTimer() {
     return {};
 }
 
-string createJson(vector<GeoRect> rects, double score, Input input) {
+string createJson(vector<GeoRect> rects, double score, double fakeScore, Input input) {
     auto quoted = [&](string key) {
         return "\"" + key + "\"";
     };
@@ -148,6 +188,7 @@ string createJson(vector<GeoRect> rects, double score, Input input) {
     }
     ss << "],\n";
     ss << quoted("type") << ":" << quoted("draw") << ",\n";
+    ss << quoted("fakeScore") << ":" << fakeScore << ",\n";
     ss << quoted("score") << ": " << score << "\n";
     ss << "}";
     return ss.str();
@@ -161,16 +202,14 @@ Output createOutput(vector<GeoRect> rects, Input input) {
     return Output(input, res);
 }
 
-int ceil(int a, int b) {
-    return (a + b - 1) / b;
-}
 
 double _lstsub = -1;
 
-void emitJsonWithTimer(vector<GeoRect> rects, double s, Input input) {
+void emitJsonWithTimer(vector<GeoRect> rects, double realScore, double fakeScore, Input input) {
     double now = timer.time_elapsed();
-    if (now - _lstsub > 0.1) {
-        emitJson(createJson(rects, s, input));
+    if (now - _lstsub > 0.016
+            ) {
+        emitJson(createJson(rects, realScore, fakeScore, input));
         _lstsub = now;
     }
 }
@@ -186,10 +225,13 @@ inline GeoRect shrink(GeoRect rIdx, const Adv &adv) {
 
 
 struct RectSet {
+private:
+    double realScore;
+public:
     int n;
     vector<GeoRect> rects;
     vector<Adv> advs;
-    double realScore;
+
 
     bool rollbackable = true;
     vector<pair<int, GeoRect> > prevItems;
@@ -203,9 +245,34 @@ struct RectSet {
         this->rollbackable = false;
     }
 
+    inline double getRealScore() {
+        return realScore;
+    }
+
     inline double individualRealScore(int i) {
         double h = 1 - 1. * min(rects[i].area(), advs[i].r) / max(rects[i].area(), advs[i].r);
         return (1 - h * h) / n;
+    }
+
+    inline double perimeterScore(int i) {
+        double score = 0;
+
+        int AX = rects[i].r - rects[i].l;
+        int AY = rects[i].u - rects[i].d;
+
+        int tot = 0;
+        for (int j = 0; j < rects.size(); j++) {
+            if (i != j) {
+                int incX = overlapLength(rects[i].l, rects[i].r + 1, rects[j].l, rects[j].r + 1);
+                int incY = overlapLength(rects[i].d, rects[i].u + 1, rects[j].d, rects[j].u + 1);
+                if (incX && incY) {
+                    incX--;
+                    incY--;
+                    tot += incX + incY;
+                }
+            }
+        }
+        return 1. * tot / (2 * AX + 2 * AY) / n;
     }
 
     double realScoreFull() {
@@ -217,6 +284,11 @@ struct RectSet {
     }
 
     double score() {
+        double area = 0;
+        for (int i = 0; i < rects.size(); i++) {
+            area += rects[i].area();
+    }
+//        cerr <<  100 * realScore / area << endl;
         return realScore;
     }
 
@@ -237,16 +309,29 @@ struct RectSet {
                 bool X = overlap(geoRect_.l, geoRect_.r, rects[j].l, rects[j].r);
                 bool Y = overlap(geoRect_.d, geoRect_.u, rects[j].d, rects[j].u);
                 if (X && Y) {
+                    cout << i << " " << j << endl;
                     prevItems.emplace_back(j, rects[j]);
                     realScore -= individualRealScore(j);
                     if (dir == 0) {
                         rects[j] = GeoRect(rects[j].l, geoRect_.l, rects[j].d, rects[j].u);
+                        if (xorShift.next_uint32(0, 2)) {
+                            rects[j] = rects[j].expand(xorShift.next_uint32(0, 4), advs[j]);
+                        }
                     } else if (dir == 1) {
                         rects[j] = GeoRect(geoRect_.r, rects[j].r, rects[j].d, rects[j].u);
+                        if (xorShift.next_uint32(0, 2)) {
+                            rects[j] = rects[j].expand(xorShift.next_uint32(0, 4), advs[j]);
+                        }
                     } else if (dir == 2) {
                         rects[j] = GeoRect(rects[j].l, rects[j].r, rects[j].d, geoRect_.d);
+                        if (xorShift.next_uint32(0, 2)) {
+                            rects[j] = rects[j].expand(xorShift.next_uint32(0, 4), advs[j]);
+                        }
                     } else if (dir == 3) {
-                        rects[j] = GeoRect(rects[j].l, rects[j].r,  geoRect_.u, rects[j].u);
+                        rects[j] = GeoRect(rects[j].l, rects[j].r, geoRect_.u, rects[j].u);
+                        if (xorShift.next_uint32(0, 2)) {
+                            rects[j] = rects[j].expand(xorShift.next_uint32(0, 4), advs[j]);
+                        }
                     }
                     rects[j] = normalizedRect(rects[j], j);
 
@@ -255,15 +340,17 @@ struct RectSet {
             }
         }
         bool bad = false;
-        for (int j = 0; j < rects.size(); j++) {
-            if (rects[j].area() == 0) {
-                bad = true;
-            }
-            if (i != j) {
-                bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
-                bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
-                if (X && Y) {
+        for (int i = 0; i < rects.size(); i++) {
+            for (int j = 0; j < rects.size(); j++) {
+                if (rects[j].area() == 0) {
                     bad = true;
+                }
+                if (i != j) {
+                    bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
+                    bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
+                    if (X && Y) {
+                        bad = true;
+                    }
                 }
             }
         }
@@ -363,6 +450,7 @@ public:
         globalBest.init(rects, input.advs);
         int iter = 0;
 
+        vector<int> forceIdx = {};
         auto attempt = [&](RectSet &rectSet, RectSet &bestRectSet, bool emit, double t) {
             const double currentScore = rectSet.score();
             iter++;
@@ -379,30 +467,43 @@ public:
                 }
                 rectSet.init(r, input.advs);
                 force = true;
+                forceIdx = remIndexes;
             } else {
-                int idx = xorShift.next_uint32(0, input.n);
+                int idx =
+                        forceIdx.size() > 0 ? forceIdx[xorShift.next_uint32(0, forceIdx.size())] : xorShift.next_uint32(
+                                0, input.n);
+//                vector< pair<double,int> > values;
+//                if( timer.time_elapsed() < 30.0) {
+//                    for (int i = 0; i < rectSet.n; i++) {
+//                        values.emplace_back(rectSet.individualRealScore(i), i);
+//                    }
+//                    sort(values.begin(), values.end());
+//                    values.resize(5);
+//                    idx = values[xorShift.next_uint32(values.size())].second;
+//                }
+
                 GeoRect rIdx = rectSet.rects[idx];
                 int rrr = xorShift.next_uint32(0, 2);
                 int dir = -1;
-
                 if (rrr == 0) {
                     rIdx = transform1(rIdx, dir);
                 } else {
                     rIdx = transform3(rIdx, input.advs[idx], dir);
                 }
                 rectSet.update(idx, rIdx, dir);
+
             }
             double nextScore = rectSet.score();
             double p = xorShift.next_prob();
             bool ok = false;
             if (force || p < exp((nextScore - currentScore) / t)) {
 //            if (nextScore > currentScore) {
-                if (rectSet.realScore > bestRectSet.realScore) {
-                    ok = bestRectSet.realScore;
+                if (rectSet.getRealScore() > bestRectSet.getRealScore()) {
+                    ok = true;
                     bestRectSet = rectSet;
                 }
                 if (emit) {
-                    emitJsonWithTimer(rectSet.rects, rectSet.realScore, input);
+                    emitJsonWithTimer(rectSet.rects, rectSet.getRealScore(), rectSet.score(), input);
                 }
 
             } else {
@@ -412,20 +513,36 @@ public:
             return ok;
         };
 
+        double t = 0.01;
         while (!timer.is_TLE()) {
-            double t = 0.01;
             RectSet rectSet;
-            rectSet.init(rects, input.advs);
-            RectSet best = rectSet;
+            rectSet.init(globalBest.rects, input.advs);
             int fail = 0;
-            while (fail < 20000) {
+            RectSet best = rectSet;
+
+            int idx = xorShift.next_uint32(input.n);
+            rectSet.update(idx, shrink(rectSet.rects[idx], input.advs[idx]), -1);
+            for (int j = 0; j < rects.size(); j++) {
+                if (idx != j) {
+                    int incX = overlapLength(rects[idx].l - 10, rects[idx].r + 10, rects[j].l - 10, rects[j].r + 10);
+                    int incY = overlapLength(rects[idx].d - 10, rects[idx].u + 10, rects[j].d - 10, rects[j].u + 10);
+                    if (incX && incY) {
+                        rectSet.update(j, shrink(rectSet.rects[j], input.advs[j]), -1);
+                    }
+                }
+            }
+
+            while (!timer.is_TLE()) {
                 bool ok = attempt(rectSet, best, true, t);
                 if (!ok) {
                     fail++;
-                } else fail = 0;
+                } else {
+                    fail = 0;
+                }
                 t *= 0.99997;
             }
-            if (globalBest.score() < best.score()) {
+            double p = xorShift.next_prob();
+            if (p < exp((best.score() - globalBest.score()) / t)) {
                 globalBest = best;
             }
         }
@@ -438,7 +555,7 @@ public:
         // TODO: 縮めるときに他を持ってくる? 伸ばすのと等価だね
         // TODO: プロダクションとテストでスコアが違うの、なんで?
         // sanitizerまわりぽいなあ
-        cerr << globalBest.realScore << endl;
+        cerr << globalBest.getRealScore() << endl;
         return createOutput(globalBest.rects, input);
     }
 };
@@ -457,7 +574,7 @@ int main() {
 #endif
     srand(0);
 #ifdef CLION
-    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0002.txt");
+    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0098.txt");
     const Input input = Input::fromInputStream(inputSrc);
 #else
     const Input input = Input::fromInputStream(cin);

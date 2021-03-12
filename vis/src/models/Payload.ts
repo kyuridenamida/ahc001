@@ -7,13 +7,14 @@ export interface Rect {
     py: number,
     id: number,
     need: number,
-    subScore: number
+    subScore: number,
 }
 
 export interface DrawPayload {
     type: "draw"
     rects: Rect[]
-    score: number
+    score: number,
+    fakeScore: number
 }
 
 export interface CommunicationRegisterPayload {
