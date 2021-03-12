@@ -102,63 +102,63 @@ function App() {
             context.fillRect(startPoint.x, startPoint.y, endPoint.x - startPoint.x, endPoint.y - startPoint.y);
         }
 
-        // payload.rects.forEach(
-        //     (r_) => {
-        //         const rect = {...r_};
-        //         rect.l /= 10;
-        //         rect.r /= 10;
-        //         rect.d /= 10;
-        //         rect.u /= 10;
-        //         rect.px /= 10;
-        //         rect.py /= 10;
-        //
-        //         selectedRectangles.forEach(s_ => {
-        //             if (s_.id == r_.id) return;
-        //
-        //             const s = {...payload.rects[s_.id]};
-        //             s.l /= 10;
-        //             s.r /= 10;
-        //             s.d /= 10;
-        //             s.u /= 10;
-        //             s.px /= 10;
-        //             s.py /= 10;
-        //             if (rect.px <= s.px) {
-        //                 if (rect.py <= s.py) {
-        //                     context.fillStyle = "rgba(0, 0, 0, 1)";
-        //                     context.fillRect(0, 0, rect.px, rect.py);
-        //                 } else {
-        //                     context.fillStyle = "rgba(0, 0, 0, 1)";
-        //                     context.fillRect(0, rect.py, rect.px, 1000 - rect.py);
-        //                 }
-        //             } else {
-        //                 if (rect.py <= s.py) {
-        //                     context.fillStyle = "rgba(0, 0, 0, 1)";
-        //                     context.fillRect(rect.px, 0, 1000 - rect.px, rect.py);
-        //                 } else {
-        //                     context.fillStyle = "rgba(0, 0, 0, 1)";
-        //                     context.fillRect(rect.px, rect.py, 1000 - rect.px, 1000 - rect.py);
-        //
-        //                 }
-        //             }
-        //         });
-        //     }
-        // );
+        payload.rects.forEach(
+            (r_) => {
+                const rect = {...r_};
+                rect.l /= 10;
+                rect.r /= 10;
+                rect.d /= 10;
+                rect.u /= 10;
+                rect.px /= 10;
+                rect.py /= 10;
 
-        // selectedRectangles.forEach(s_ => {
-        //     const s = {...s_};
-        //     context.fillStyle = "red";
-        //     context.strokeStyle = "blue";
-        //     s.px /= 10;
-        //     s.py /= 10;
-        //     context.beginPath();
-        //     context.moveTo(s.px, 0);
-        //     context.lineTo(s.px, 1000);
-        //     context.stroke();
-        //     context.beginPath();
-        //     context.moveTo(0, s.py);
-        //     context.lineTo(1000, s.py);
-        //     context.stroke();
-        // });
+                selectedRectangles.forEach(s_ => {
+                    if (s_.id == r_.id) return;
+
+                    const s = {...payload.rects[s_.id]};
+                    s.l /= 10;
+                    s.r /= 10;
+                    s.d /= 10;
+                    s.u /= 10;
+                    s.px /= 10;
+                    s.py /= 10;
+                    if (rect.px <= s.px) {
+                        if (rect.py <= s.py) {
+                            context.fillStyle = "rgba(0, 0, 0, 1)";
+                            context.fillRect(0, 0, rect.px, rect.py);
+                        } else {
+                            context.fillStyle = "rgba(0, 0, 0, 1)";
+                            context.fillRect(0, rect.py, rect.px, 1000 - rect.py);
+                        }
+                    } else {
+                        if (rect.py <= s.py) {
+                            context.fillStyle = "rgba(0, 0, 0, 1)";
+                            context.fillRect(rect.px, 0, 1000 - rect.px, rect.py);
+                        } else {
+                            context.fillStyle = "rgba(0, 0, 0, 1)";
+                            context.fillRect(rect.px, rect.py, 1000 - rect.px, 1000 - rect.py);
+
+                        }
+                    }
+                });
+            }
+        );
+
+        selectedRectangles.forEach(s_ => {
+            const s = {...s_};
+            context.fillStyle = "red";
+            context.strokeStyle = "blue";
+            s.px /= 10;
+            s.py /= 10;
+            context.beginPath();
+            context.moveTo(s.px, 0);
+            context.lineTo(s.px, 1000);
+            context.stroke();
+            context.beginPath();
+            context.moveTo(0, s.py);
+            context.lineTo(1000, s.py);
+            context.stroke();
+        });
 
 
     }, [payload, selectedRectangles, startPoint, endPoint]);
@@ -174,16 +174,16 @@ function App() {
     }, []);
 
     const sendRemoveRequest = async (file: string, remIndexes: number[]) => {
-        await fetch("/write/", {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                file: file,
-                remIndexes: remIndexes
-            })
-        });
+        // await fetch("/write/", {
+        //     method: 'POST',
+        //     headers: {
+        //         'Content-Type': 'application/json'
+        //     },
+        //     body: JSON.stringify({
+        //         file: file,
+        //         remIndexes: remIndexes
+        //     })
+        // });
     };
     return (
         <div className="App">

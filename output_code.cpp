@@ -3,6 +3,7 @@
 #include <bitset>
 #include <algorithm>
 #include <complex>
+#include <set>
 //
 // Created by kyuridenamida on 2021/03/08.
 //
@@ -290,7 +291,7 @@ using namespace std;
 
 XorShift xorShift;
 
-RealTimer timer(5.0);
+RealTimer timer(5);
 
 typedef complex<double> GeoPoint;
 typedef GeoPoint V;
@@ -303,8 +304,17 @@ bool overlap(int a, int b, int A, int B) {
     return true;
 }
 
+int overlapLength(int a, int b, int A, int B) {
+    return max(0, min(B, b) - max(a, A));
+}
+
 inline bool eq(int a, int b) {
     return a == b;
+}
+
+
+int ceil(int a, int b) {
+    return (a + b - 1) / b;
 }
 
 class GeoRect {
@@ -315,7 +325,7 @@ public:
     int d;
     int u;
 
-    GeoRect() { }
+    GeoRect() {}
 
     GeoRect(int l, int r, int d, int u) : l(l), r(r), d(d), u(u) {}
 
@@ -332,6 +342,35 @@ public:
 
     bool operator!=(const GeoRect &rhs) const {
         return !(rhs == *this);
+    }
+
+    GeoRect expand(int dir, const Adv &adv) {
+        if (l == r || u == d) {
+            return *this;
+        }
+        GeoRect rIdx = *this;
+        double needArea = adv.r - area();
+        const int cap = 10;
+        if (dir == 0 || dir == 1) {
+            int needLength = min(cap, ceil(needArea, (rIdx.u - rIdx.d)));
+            if (dir == 0) {
+                // 左伸ばす
+                rIdx.l -= needLength;
+            } else {
+                // 右伸ばす
+                rIdx.r += needLength;
+            }
+        } else {
+            int needLength = min(cap, ceil(needArea, (rIdx.r - rIdx.l)));
+            if (dir == 2) {
+                // した伸ばす
+                rIdx.d -= needLength;
+            } else {
+                // うえ伸ばす
+                rIdx.u += needLength;
+            }
+        }
+        return rIdx;
     }
 
     Rect toRect() {
@@ -388,7 +427,7 @@ vector<int> removeIndexesWithTimer() {
     return {};
 }
 
-string createJson(vector<GeoRect> rects, double score, Input input) {
+string createJson(vector<GeoRect> rects, double score, double fakeScore, Input input) {
     auto quoted = [&](string key) {
         return "\"" + key + "\"";
     };
@@ -422,6 +461,7 @@ string createJson(vector<GeoRect> rects, double score, Input input) {
     }
     ss << "],\n";
     ss << quoted("type") << ":" << quoted("draw") << ",\n";
+    ss << quoted("fakeScore") << ":" << fakeScore << ",\n";
     ss << quoted("score") << ": " << score << "\n";
     ss << "}";
     return ss.str();
@@ -435,15 +475,12 @@ Output createOutput(vector<GeoRect> rects, Input input) {
     return Output(input, res);
 }
 
-int ceil(int a, int b) {
-    return (a + b - 1) / b;
-}
 
 double _lstsub = -1;
 
-void emitJsonWithTimer(vector<GeoRect> rects, double s, Input input) {
+void emitJsonWithTimer(vector<GeoRect> rects, double realScore, double fakeScore, Input input) {
     double now = timer.time_elapsed();
-    if (now - _lstsub > 0.1) {
+    if (now - _lstsub > 0.016) {
         _lstsub = now;
     }
 }
@@ -459,10 +496,13 @@ inline GeoRect shrink(GeoRect rIdx, const Adv &adv) {
 
 
 struct RectSet {
+private:
+    double realScore;
+public:
     int n;
     vector<GeoRect> rects;
     vector<Adv> advs;
-    double realScore;
+
 
     bool rollbackable = true;
     vector<pair<int, GeoRect> > prevItems;
@@ -474,6 +514,10 @@ struct RectSet {
         this->advs = advs;
         this->realScore = realScoreFull();
         this->rollbackable = false;
+    }
+
+    inline double getRealScore() {
+        return realScore;
     }
 
     inline double individualRealScore(int i) {
@@ -505,7 +549,7 @@ struct RectSet {
         rects[i] = geoRect;
         realScore += individualRealScore(i);
 
-        for (int j = 0; j < rects.size(); j++) {
+        for (int j = 0; j < n; j++) {
             if (i != j) {
                 bool X = overlap(geoRect_.l, geoRect_.r, rects[j].l, rects[j].r);
                 bool Y = overlap(geoRect_.d, geoRect_.u, rects[j].d, rects[j].u);
@@ -519,7 +563,15 @@ struct RectSet {
                     } else if (dir == 2) {
                         rects[j] = GeoRect(rects[j].l, rects[j].r, rects[j].d, geoRect_.d);
                     } else if (dir == 3) {
-                        rects[j] = GeoRect(rects[j].l, rects[j].r,  geoRect_.u, rects[j].u);
+                        rects[j] = GeoRect(rects[j].l, rects[j].r, geoRect_.u, rects[j].u);
+                    } else if (dir == 4) {
+                        rects[j] = GeoRect(rects[j].l, geoRect_.l, rects[j].d, geoRect_.d);
+                    } else if (dir == 5) {
+                        rects[j] = GeoRect(geoRect_.r, rects[j].r, geoRect_.u, rects[j].u);
+                    } else if (dir == 6) {
+                        rects[j] = GeoRect(rects[j].l, geoRect_.l, geoRect_.u, rects[j].u);
+                    } else if (dir == 7) {
+                        rects[j] = GeoRect(geoRect_.r, rects[j].r, rects[j].d, geoRect_.d);
                     }
                     rects[j] = normalizedRect(rects[j], j);
 
@@ -528,7 +580,7 @@ struct RectSet {
             }
         }
         bool bad = false;
-        for (int j = 0; j < rects.size(); j++) {
+        for (int j = 0; j < n; j++) {
             if (rects[j].area() == 0) {
                 bad = true;
             }
@@ -571,7 +623,7 @@ struct RectSet {
 };
 
 inline GeoRect transform1(GeoRect rIdx, int &dir_dest) {
-    int dir = xorShift.next_uint32(0, 4);
+    int dir = xorShift.next_uint32(0, 5);
     int x = xorShift.next_uint32(-100, 100);
     if (dir == 0 || dir == 1) {
         if (dir == 0) {
@@ -600,7 +652,7 @@ inline GeoRect transform1(GeoRect rIdx, int &dir_dest) {
 inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest) {
     double needArea = adv.r - rIdx.area();
     const int cap = 10;
-    int dir = xorShift.next_uint32(0, 4);
+    int dir = xorShift.next_uint32(0, 8);
     if (dir == 0 || dir == 1) {
         int needLength = min(cap, ceil(needArea, (rIdx.u - rIdx.d)));
         if (dir == 0) {
@@ -610,7 +662,7 @@ inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest) {
             // 右伸ばす
             rIdx.r += needLength;
         }
-    } else {
+    } else if (dir == 2 || dir == 3) {
         int needLength = min(cap, ceil(needArea, (rIdx.r - rIdx.l)));
         if (dir == 2) {
             // した伸ばす
@@ -619,6 +671,26 @@ inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest) {
             // うえ伸ばす
             rIdx.u += needLength;
         }
+    } else if (dir == 4) {
+        // 左したのばす
+        int needLength = xorShift.next_uint32(1, 10);
+        rIdx.l -= needLength;
+        rIdx.d -= needLength;
+    } else if (dir == 5) {
+        // 右上のばす
+        int needLength = xorShift.next_uint32(1, 10);
+        rIdx.r += needLength;
+        rIdx.u += needLength;
+    } else if (dir == 6) {
+        // 左上のばす
+        int needLength = xorShift.next_uint32(1, 10);
+        rIdx.l -= needLength;
+        rIdx.u += needLength;
+    } else if (dir == 7) {
+        // 右下のばす
+        int needLength = xorShift.next_uint32(1, 10);
+        rIdx.r += needLength;
+        rIdx.d -= needLength;
     }
     dir_dest = dir;
     return rIdx;
@@ -636,6 +708,7 @@ public:
         globalBest.init(rects, input.advs);
         int iter = 0;
 
+        vector<int> forceIdx = {};
         auto attempt = [&](RectSet &rectSet, RectSet &bestRectSet, bool emit, double t) {
             const double currentScore = rectSet.score();
             iter++;
@@ -652,26 +725,39 @@ public:
                 }
                 rectSet.init(r, input.advs);
                 force = true;
+                forceIdx = remIndexes;
             } else {
-                int idx = xorShift.next_uint32(0, input.n);
+                int idx =
+                        forceIdx.size() > 0 ? forceIdx[xorShift.next_uint32(0, forceIdx.size())] : xorShift.next_uint32(
+                                0, input.n);
+//                vector< pair<double,int> > values;
+//                if( timer.time_elapsed() < 30.0) {
+//                    for (int i = 0; i < rectSet.n; i++) {
+//                        values.emplace_back(rectSet.individualRealScore(i), i);
+//                    }
+//                    sort(values.begin(), values.end());
+//                    values.resize(5);
+//                    idx = values[xorShift.next_uint32(values.size())].second;
+//                }
+
                 GeoRect rIdx = rectSet.rects[idx];
                 int rrr = xorShift.next_uint32(0, 2);
                 int dir = -1;
-
                 if (rrr == 0) {
                     rIdx = transform1(rIdx, dir);
                 } else {
                     rIdx = transform3(rIdx, input.advs[idx], dir);
                 }
                 rectSet.update(idx, rIdx, dir);
+
             }
             double nextScore = rectSet.score();
             double p = xorShift.next_prob();
             bool ok = false;
             if (force || p < exp((nextScore - currentScore) / t)) {
 //            if (nextScore > currentScore) {
-                if (rectSet.realScore > bestRectSet.realScore) {
-                    ok = bestRectSet.realScore;
+                if (rectSet.getRealScore() > bestRectSet.getRealScore()) {
+                    ok = true;
                     bestRectSet = rectSet;
                 }
                 if (emit) {
@@ -684,23 +770,21 @@ public:
             return ok;
         };
 
+        double start_temp = 0.001;
+        double end_temp = 0.000001;
+
+        RectSet rectSet;
+        rectSet.init(rects, input.advs);
         while (!timer.is_TLE()) {
-            double t = 0.01;
-            RectSet rectSet;
-            rectSet.init(rects, input.advs);
-            RectSet best = rectSet;
-            int fail = 0;
-            while (fail < 20000) {
-                bool ok = attempt(rectSet, best, true, t);
-                if (!ok) {
-                    fail++;
-                } else fail = 0;
-                t *= 0.99997;
-            }
-            if (globalBest.score() < best.score()) {
-                globalBest = best;
-            }
+            double temp =
+                    start_temp +
+                    timer.relative_time_elapsed() * (end_temp - start_temp);
+            attempt(rectSet, globalBest, true, temp);
         }
+
+
+        //　TODO: 高速化 check herasu
+
 
         // TODO: 明日へのTODO 当たり判定もしくは不正box修正アルゴリズムバグってない?
         // TODO: あとでかすぎるやつ検出する
@@ -728,7 +812,7 @@ int main() {
 #endif
     srand(0);
 #ifdef CLION
-    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0002.txt");
+    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0030.txt");
     const Input input = Input::fromInputStream(inputSrc);
 #else
     const Input input = Input::fromInputStream(cin);

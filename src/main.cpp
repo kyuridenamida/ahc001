@@ -3,6 +3,7 @@
 #include <bitset>
 #include <algorithm>
 #include <complex>
+#include <set>
 #include "./common.h"
 #include "visclient.h"
 #include "./Timer.h"
@@ -12,7 +13,7 @@ using namespace std;
 
 XorShift xorShift;
 
-RealTimer timer(10000);
+RealTimer timer(5);
 
 typedef complex<double> GeoPoint;
 typedef GeoPoint V;
@@ -129,7 +130,7 @@ vector<int> removeIndexes() {
         indexes.push_back(idx);
         cerr << idx << " ";
     }
-    cout << endl;
+    cerr << endl;
     ifs.close();
     cerr << " and you have " << indexes.size() << " delete indexes" << endl;
 
@@ -207,8 +208,7 @@ double _lstsub = -1;
 
 void emitJsonWithTimer(vector<GeoRect> rects, double realScore, double fakeScore, Input input) {
     double now = timer.time_elapsed();
-    if (now - _lstsub > 0.016
-            ) {
+    if (now - _lstsub > 0.016) {
         emitJson(createJson(rects, realScore, fakeScore, input));
         _lstsub = now;
     }
@@ -254,27 +254,6 @@ public:
         return (1 - h * h) / n;
     }
 
-    inline double perimeterScore(int i) {
-        double score = 0;
-
-        int AX = rects[i].r - rects[i].l;
-        int AY = rects[i].u - rects[i].d;
-
-        int tot = 0;
-        for (int j = 0; j < rects.size(); j++) {
-            if (i != j) {
-                int incX = overlapLength(rects[i].l, rects[i].r + 1, rects[j].l, rects[j].r + 1);
-                int incY = overlapLength(rects[i].d, rects[i].u + 1, rects[j].d, rects[j].u + 1);
-                if (incX && incY) {
-                    incX--;
-                    incY--;
-                    tot += incX + incY;
-                }
-            }
-        }
-        return 1. * tot / (2 * AX + 2 * AY) / n;
-    }
-
     double realScoreFull() {
         double ans = 0;
         for (int i = 0; i < rects.size(); i++) {
@@ -284,11 +263,6 @@ public:
     }
 
     double score() {
-        double area = 0;
-        for (int i = 0; i < rects.size(); i++) {
-            area += rects[i].area();
-    }
-//        cerr <<  100 * realScore / area << endl;
         return realScore;
     }
 
@@ -304,34 +278,29 @@ public:
         rects[i] = geoRect;
         realScore += individualRealScore(i);
 
-        for (int j = 0; j < rects.size(); j++) {
+        for (int j = 0; j < n; j++) {
             if (i != j) {
                 bool X = overlap(geoRect_.l, geoRect_.r, rects[j].l, rects[j].r);
                 bool Y = overlap(geoRect_.d, geoRect_.u, rects[j].d, rects[j].u);
                 if (X && Y) {
-                    cout << i << " " << j << endl;
                     prevItems.emplace_back(j, rects[j]);
                     realScore -= individualRealScore(j);
                     if (dir == 0) {
                         rects[j] = GeoRect(rects[j].l, geoRect_.l, rects[j].d, rects[j].u);
-                        if (xorShift.next_uint32(0, 2)) {
-                            rects[j] = rects[j].expand(xorShift.next_uint32(0, 4), advs[j]);
-                        }
                     } else if (dir == 1) {
                         rects[j] = GeoRect(geoRect_.r, rects[j].r, rects[j].d, rects[j].u);
-                        if (xorShift.next_uint32(0, 2)) {
-                            rects[j] = rects[j].expand(xorShift.next_uint32(0, 4), advs[j]);
-                        }
                     } else if (dir == 2) {
                         rects[j] = GeoRect(rects[j].l, rects[j].r, rects[j].d, geoRect_.d);
-                        if (xorShift.next_uint32(0, 2)) {
-                            rects[j] = rects[j].expand(xorShift.next_uint32(0, 4), advs[j]);
-                        }
                     } else if (dir == 3) {
                         rects[j] = GeoRect(rects[j].l, rects[j].r, geoRect_.u, rects[j].u);
-                        if (xorShift.next_uint32(0, 2)) {
-                            rects[j] = rects[j].expand(xorShift.next_uint32(0, 4), advs[j]);
-                        }
+                    } else if (dir == 4) {
+                        rects[j] = GeoRect(rects[j].l, geoRect_.l, rects[j].d, geoRect_.d);
+                    } else if (dir == 5) {
+                        rects[j] = GeoRect(geoRect_.r, rects[j].r, geoRect_.u, rects[j].u);
+                    } else if (dir == 6) {
+                        rects[j] = GeoRect(rects[j].l, geoRect_.l, geoRect_.u, rects[j].u);
+                    } else if (dir == 7) {
+                        rects[j] = GeoRect(geoRect_.r, rects[j].r, rects[j].d, geoRect_.d);
                     }
                     rects[j] = normalizedRect(rects[j], j);
 
@@ -340,17 +309,15 @@ public:
             }
         }
         bool bad = false;
-        for (int i = 0; i < rects.size(); i++) {
-            for (int j = 0; j < rects.size(); j++) {
-                if (rects[j].area() == 0) {
+        for (int j = 0; j < n; j++) {
+            if (rects[j].area() == 0) {
+                bad = true;
+            }
+            if (i != j) {
+                bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
+                bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
+                if (X && Y) {
                     bad = true;
-                }
-                if (i != j) {
-                    bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
-                    bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
-                    if (X && Y) {
-                        bad = true;
-                    }
                 }
             }
         }
@@ -385,7 +352,7 @@ public:
 };
 
 inline GeoRect transform1(GeoRect rIdx, int &dir_dest) {
-    int dir = xorShift.next_uint32(0, 4);
+    int dir = xorShift.next_uint32(0, 5);
     int x = xorShift.next_uint32(-100, 100);
     if (dir == 0 || dir == 1) {
         if (dir == 0) {
@@ -414,7 +381,7 @@ inline GeoRect transform1(GeoRect rIdx, int &dir_dest) {
 inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest) {
     double needArea = adv.r - rIdx.area();
     const int cap = 10;
-    int dir = xorShift.next_uint32(0, 4);
+    int dir = xorShift.next_uint32(0, 8);
     if (dir == 0 || dir == 1) {
         int needLength = min(cap, ceil(needArea, (rIdx.u - rIdx.d)));
         if (dir == 0) {
@@ -424,7 +391,7 @@ inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest) {
             // 右伸ばす
             rIdx.r += needLength;
         }
-    } else {
+    } else if (dir == 2 || dir == 3) {
         int needLength = min(cap, ceil(needArea, (rIdx.r - rIdx.l)));
         if (dir == 2) {
             // した伸ばす
@@ -433,6 +400,26 @@ inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest) {
             // うえ伸ばす
             rIdx.u += needLength;
         }
+    } else if (dir == 4) {
+        // 左したのばす
+        int needLength = xorShift.next_uint32(1, 10);
+        rIdx.l -= needLength;
+        rIdx.d -= needLength;
+    } else if (dir == 5) {
+        // 右上のばす
+        int needLength = xorShift.next_uint32(1, 10);
+        rIdx.r += needLength;
+        rIdx.u += needLength;
+    } else if (dir == 6) {
+        // 左上のばす
+        int needLength = xorShift.next_uint32(1, 10);
+        rIdx.l -= needLength;
+        rIdx.u += needLength;
+    } else if (dir == 7) {
+        // 右下のばす
+        int needLength = xorShift.next_uint32(1, 10);
+        rIdx.r += needLength;
+        rIdx.d -= needLength;
     }
     dir_dest = dir;
     return rIdx;
@@ -513,39 +500,24 @@ public:
             return ok;
         };
 
-        double t = 0.01;
-        while (!timer.is_TLE()) {
-            RectSet rectSet;
-            rectSet.init(globalBest.rects, input.advs);
-            int fail = 0;
-            RectSet best = rectSet;
+        double start_temp = 0.001;
+        double end_temp = 0.000001;
 
-            int idx = xorShift.next_uint32(input.n);
-            rectSet.update(idx, shrink(rectSet.rects[idx], input.advs[idx]), -1);
-            for (int j = 0; j < rects.size(); j++) {
-                if (idx != j) {
-                    int incX = overlapLength(rects[idx].l - 10, rects[idx].r + 10, rects[j].l - 10, rects[j].r + 10);
-                    int incY = overlapLength(rects[idx].d - 10, rects[idx].u + 10, rects[j].d - 10, rects[j].u + 10);
-                    if (incX && incY) {
-                        rectSet.update(j, shrink(rectSet.rects[j], input.advs[j]), -1);
-                    }
-                }
-            }
+        RectSet rectSet;
+        rectSet.init(rects, input.advs);
+        int fail = 0;
+        while (!timer.is_TLE() || fail < 20000) {
+            double temp =
+                    start_temp +
+                    timer.relative_time_elapsed() * (end_temp - start_temp);
+            bool ok = attempt(rectSet, globalBest, true, temp);
+            if(!ok) fail++; else fail = 0;
 
-            while (!timer.is_TLE()) {
-                bool ok = attempt(rectSet, best, true, t);
-                if (!ok) {
-                    fail++;
-                } else {
-                    fail = 0;
-                }
-                t *= 0.99997;
-            }
-            double p = xorShift.next_prob();
-            if (p < exp((best.score() - globalBest.score()) / t)) {
-                globalBest = best;
-            }
         }
+
+
+        //　TODO: 高速化 check herasu
+
 
         // TODO: 明日へのTODO 当たり判定もしくは不正box修正アルゴリズムバグってない?
         // TODO: あとでかすぎるやつ検出する
@@ -555,7 +527,6 @@ public:
         // TODO: 縮めるときに他を持ってくる? 伸ばすのと等価だね
         // TODO: プロダクションとテストでスコアが違うの、なんで?
         // sanitizerまわりぽいなあ
-        cerr << globalBest.getRealScore() << endl;
         return createOutput(globalBest.rects, input);
     }
 };
@@ -574,7 +545,7 @@ int main() {
 #endif
     srand(0);
 #ifdef CLION
-    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0098.txt");
+    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0030.txt");
     const Input input = Input::fromInputStream(inputSrc);
 #else
     const Input input = Input::fromInputStream(cin);

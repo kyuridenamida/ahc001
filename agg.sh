@@ -18,7 +18,9 @@ cat $files |grep -v "^0$"  | st --format="%.0f" --percentile=50
 
 echo -n "Max: "
 cat $files |grep -v "^0$"  | st --format="%.0f" --max
-
+res=`cat $files |grep -v "^0$"  | st --format="%.0f" --max`
+grep "^$res$" $files
+echo
 
 echo -n "ZERO "
 cat $files |grep "^0$"  | wc -l
