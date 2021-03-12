@@ -37,7 +37,7 @@ public:
     int d;
     int u;
 
-    GeoRect() { l = r = d = u - 1; }
+    GeoRect() { }
 
     GeoRect(int l, int r, int d, int u) : l(l), r(r), d(d), u(u) {}
 
@@ -240,13 +240,13 @@ struct RectSet {
                     prevItems.emplace_back(j, rects[j]);
                     realScore -= individualRealScore(j);
                     if (dir == 0) {
-                        rects[j].r = geoRect_.l;
+                        rects[j] = GeoRect(rects[j].l, geoRect_.l, rects[j].d, rects[j].u);
                     } else if (dir == 1) {
-                        rects[j].l = geoRect_.r;
+                        rects[j] = GeoRect(geoRect_.r, rects[j].r, rects[j].d, rects[j].u);
                     } else if (dir == 2) {
-                        rects[j].u = geoRect_.d;
+                        rects[j] = GeoRect(rects[j].l, rects[j].r, rects[j].d, geoRect_.d);
                     } else if (dir == 3) {
-                        rects[j].d = geoRect_.u;
+                        rects[j] = GeoRect(rects[j].l, rects[j].r,  geoRect_.u, rects[j].u);
                     }
                     rects[j] = normalizedRect(rects[j], j);
 
