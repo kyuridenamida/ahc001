@@ -1,3 +1,4 @@
+
 #include <iostream>
 #include <bitset>
 #include <algorithm>
@@ -5,27 +6,23 @@
 #include "./common.h"
 #include "visclient.h"
 #include "./Timer.h"
+#include "./xorshift.h"
 
 using namespace std;
+
+XorShift xorShift;
 
 RealTimer timer(5.0);
 
 typedef complex<double> GeoPoint;
 typedef GeoPoint V;
 
-int random(int a, int b) {
-    return rand() % (b - a + 1) + a;
-}
 
 bool overlap(int a, int b, int A, int B) {
     if (B <= a || b <= A) {
         return false;
     }
     return true;
-}
-
-int overlapLength(int a, int b, int A, int B) {
-    return max(min(b, B) - max(a, A), 0);
 }
 
 inline bool eq(int a, int b) {
@@ -223,10 +220,6 @@ struct RectSet {
         return realScore;
     }
 
-    double strictScore() {
-        return realScore;
-    }
-
 
     void update(int i, const GeoRect &geoRect_, int dir) {
         auto geoRect = normalizedRect(geoRect_, i);
@@ -278,7 +271,6 @@ struct RectSet {
             realScore = -100000000;
         }
 
-
     }
 
     GeoRect normalizedRect(GeoRect geoRect, int i) {
@@ -306,8 +298,8 @@ struct RectSet {
 };
 
 inline GeoRect transform1(GeoRect rIdx, int &dir_dest) {
-    int dir = rand() % 4;
-    int x = random(-100, 100);
+    int dir = xorShift.next_uint32(0, 4);
+    int x = xorShift.next_uint32(-100, 100);
     if (dir == 0 || dir == 1) {
         if (dir == 0) {
             // 左伸ばす
@@ -335,7 +327,7 @@ inline GeoRect transform1(GeoRect rIdx, int &dir_dest) {
 inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest) {
     double needArea = adv.r - rIdx.area();
     const int cap = 10;
-    int dir = rand() % 4;
+    int dir = xorShift.next_uint32(0, 4);
     if (dir == 0 || dir == 1) {
         int needLength = min(cap, ceil(needArea, (rIdx.u - rIdx.d)));
         if (dir == 0) {
@@ -388,9 +380,9 @@ public:
                 rectSet.init(r, input.advs);
                 force = true;
             } else {
-                int idx = rand() % input.n;
+                int idx = xorShift.next_uint32(0, input.n);
                 GeoRect rIdx = rectSet.rects[idx];
-                int rrr = rand() % 2;
+                int rrr = xorShift.next_uint32(0, 2);
                 int dir = -1;
 
                 if (rrr == 0) {
@@ -401,15 +393,16 @@ public:
                 rectSet.update(idx, rIdx, dir);
             }
             double nextScore = rectSet.score();
-            double p = 1. * random() / RAND_MAX;
+            double p = xorShift.next_prob();
             bool ok = false;
-            if (force || p < exp((nextScore - currentScore) / t)) {
+//            if (force || p < exp((nextScore - currentScore) / t)) {
+            if (nextScore > currentScore) {
                 if (rectSet.realScore > bestRectSet.realScore) {
                     ok = bestRectSet.realScore;
                     bestRectSet = rectSet;
                 }
                 if (emit) {
-//                    emitJsonWithTimer(rectSet.rects, rectSet.realScore, input);
+                    emitJsonWithTimer(rectSet.rects, rectSet.realScore, input);
                 }
 
             } else {
@@ -425,16 +418,17 @@ public:
             rectSet.init(rects, input.advs);
             RectSet best = rectSet;
             int fail = 0;
-            while ( fail < 20000) {
+            while (fail < 20000) {
                 bool ok = attempt(rectSet, best, true, t);
                 if (!ok) {
                     fail++;
                 } else fail = 0;
                 t *= 0.99997;
             }
-            if (globalBest.strictScore() < best.strictScore()) {
+            if (globalBest.score() < best.score()) {
                 globalBest = best;
             }
+            break;
         }
 
         // TODO: 明日へのTODO 当たり判定もしくは不正box修正アルゴリズムバグってない?
@@ -445,6 +439,7 @@ public:
         // TODO: 縮めるときに他を持ってくる? 伸ばすのと等価だね
         // TODO: プロダクションとテストでスコアが違うの、なんで?
         // sanitizerまわりぽいなあ
+        cerr << globalBest.realScore << endl;
         return createOutput(globalBest.rects, input);
     }
 };

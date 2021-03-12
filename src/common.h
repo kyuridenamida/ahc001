@@ -22,10 +22,6 @@ struct P {
 
     P(int x, int y) : x(x), y(y) {}
 
-    bool invalid() {
-        return x == -1;
-    }
-
     bool operator==(const P &rhs) const {
         return x == rhs.x &&
                y == rhs.y;
@@ -76,10 +72,6 @@ struct Rect {
     bool operator!=(const Rect &rhs) const {
         return !(rhs == *this);
     }
-
-    bool invalid() {
-        return p.invalid();
-    }
 };
 
 struct OutputItem {
@@ -104,29 +96,6 @@ struct Input {
     Input(const int n, const vector<Adv> &advs) : n(n), advs(advs) {}
 
 public:
-    void outputToStream(ostream &ofs) const {
-        ofs << "n = " << n << endl;
-        auto fill = [](int a, int n) {
-            int at = a;
-            stringstream ss;
-            if (a == 0) {
-                ss << string(n - 1, ' ');
-            } else {
-                while (a > 0) {
-                    n--;
-                    a /= 10;
-                }
-                ss << string(max(0, n), ' ');
-            }
-            ss << at;
-            return ss.str();
-        };
-        for (auto i : advs) {
-            ofs << "id=" << fill(i.id, 3) << " (" << fill(i.p.x, 4) << "," << fill(i.p.y, 4) << ")" << " r="
-                << fill(i.r, 7) << endl;
-        }
-    }
-
     static Input fromInputStream(istream &is) {
         int n;
         is >> n;
