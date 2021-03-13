@@ -22,7 +22,7 @@
 
 using namespace std;
 
-bool overlap(int a, int b, int A, int B) {
+inline bool overlap(int a, int b, int A, int B) {
     if (B <= a || b <= A) {
         return false;
     }
@@ -874,7 +874,6 @@ public:
                 bool X = overlap(geoRect_.l, geoRect_.r, op.l, op.r);
                 bool Y = overlap(geoRect_.d, geoRect_.u, op.d, op.u);
                 if (X && Y) {
-
                     prevItems.emplace_back(j, op);
                     realScore -= individualRealScore(j);
                     if (pushDir == DIR::LEFT) {
@@ -907,21 +906,21 @@ public:
                 }
             }
         }
-        if (!bad) {
-            if (geoRect != geoRect_) {
-                for (int j = 0; j < n; j++) {
-                    if (i != j) {
-                        bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
-                        bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
-                        if (X && Y) {
-// //                            cerr << (geoRect != geoRect_) << ")" << endl;
-                            rollBack();
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
+//        if (!bad) {
+//            if (geoRect != geoRect_) {
+//                for (int j = 0; j < n; j++) {
+//                    if (i != j) {
+//                        bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
+//                        bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
+//                        if (X && Y) {
+// ////                            cerr << (geoRect != geoRect_) << ")" << endl;
+//                            rollBack();
+//                            return false;
+//                        }
+//                    }
+//                }
+//            }
+//        }
         return true;
 
     }

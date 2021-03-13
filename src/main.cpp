@@ -165,7 +165,6 @@ public:
                 bool X = overlap(geoRect_.l, geoRect_.r, op.l, op.r);
                 bool Y = overlap(geoRect_.d, geoRect_.u, op.d, op.u);
                 if (X && Y) {
-
                     prevItems.emplace_back(j, op);
                     realScore -= individualRealScore(j);
                     if (pushDir == DIR::LEFT) {

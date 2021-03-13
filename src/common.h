@@ -16,7 +16,7 @@
 
 using namespace std;
 
-bool overlap(int a, int b, int A, int B) {
+inline bool overlap(int a, int b, int A, int B) {
     if (B <= a || b <= A) {
         return false;
     }
