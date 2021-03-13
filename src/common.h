@@ -92,7 +92,7 @@ static ifstream loadFile(const string filename) {
 }
 
 struct Input {
-    const int n;
+    int n;
     std::vector<Adv> advs;
 
     Input(const int n, const vector<Adv> &advs) : n(n), advs(advs) {}

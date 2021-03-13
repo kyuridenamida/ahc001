@@ -856,13 +856,13 @@ public:
     }
 
     bool update(const int i, const Rect &geoRect_, int pushDir, int pushLength) {
-        if (pushLength == 0)
-            return true;
-        auto geoRect = normalizedRect(geoRect_, i);
         prevItems.clear();
         prevItems.emplace_back(i, rects[i]);
         prevRealScore = realScore;
         rollbackable = true;
+        if (pushLength == 0)
+            return true;
+        auto geoRect = normalizedRect(geoRect_, i);
 
         realScore -= individualRealScore(i);
         rects[i] = geoRect;
@@ -1052,10 +1052,12 @@ inline Rect stickyExtend(Rect newRect, const Adv &adv, DIR &dir_dest, int &pushL
 }
 
 struct Args {
-    static const int EXPECTED_PARAM_COUNT = 3;
+    static const int EXPECTED_PARAM_COUNT = 5;
     double saStartTemp = 0.0005;
     double saEndTemp = 0.000001;
     int randomSeed = 0;
+    double paramsA = 1;
+    double paramsB = 4;
 
     Args() {
     }
@@ -1072,7 +1074,12 @@ struct Args {
             ssForParsing << argv[i] << " ";
         }
         Args args;
-        assert(ssForParsing >> args.saStartTemp >> args.saEndTemp >> args.randomSeed);
+        ssForParsing >> args.saStartTemp;
+        ssForParsing >> args.saEndTemp;
+        ssForParsing >> args.randomSeed;
+        ssForParsing >> args.paramsA;
+        ssForParsing >> args.paramsB;
+        return args;
     }
 };
 
@@ -1151,17 +1158,19 @@ Output solveBySimulatedAnnealing(Input input, const Args &args) {
         return ok;
     };
 
-    double startTemp = args.saStartTemp;
-    double endTemp = args.saEndTemp;
-
     RectSet rectSet;
     rectSet.init(rects, input.advs);
+
+    auto computeTemperature = [&](double progress) {
+        return args.saStartTemp
+               + progress * progress * progress * (args.saEndTemp - args.saStartTemp);
+    };
+
     while (!ctx->timer->is_TLE()) {
-        double temp = startTemp +
-                      ctx->timer->relative_time_elapsed() * (endTemp - startTemp);
-        attempt(rectSet, globalBest, true, temp);
+        double T = computeTemperature(ctx->timer->relative_time_elapsed());
+        attempt(rectSet, globalBest, true, T);
     }
-//    cout << iter << endl;
+//    cout << iter << " " << globalBest.score() << endl;
     return Output(globalBest.rects);
 }
 
