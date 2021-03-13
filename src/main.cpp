@@ -65,44 +65,6 @@ void registerApplicationContext(ApplicationContext *applicationContext) {
     ctx = applicationContext;
 }
 
-string buildReportJson(vector<Rect> rects, double score, double fakeScore, Input input) {
-    using namespace HttpUtils;
-    auto f = [&](Rect r, int idx) {
-        double h = 1 - 1. * min(r.area(), input.advs[idx].r) / max(r.area(), input.advs[idx].r);
-        double subScore = 1 - h * h;
-        return mapToJson(
-                {
-                        {"l",        jsonValue(r.l)},
-                        {"r",        jsonValue(r.r)},
-                        {"u",        jsonValue(r.u)},
-                        {"d",        jsonValue(r.d)},
-                        {"id",       jsonValue(idx)},
-                        {"need",     jsonValue(input.advs[idx].r)},
-                        {"px",       jsonValue(input.advs[idx].p.x)},
-                        {"py",       jsonValue(input.advs[idx].p.y)},
-                        {"subScore", jsonValue(subScore)}
-                }
-        );
-    };
-    stringstream rectsArray;
-    rectsArray << "[";
-    for (int i = 0; i < rects.size(); i++) {
-        if (i != 0) {
-            rectsArray << ",";
-        }
-        rectsArray << f(rects[i], i);
-    }
-    rectsArray << "]";
-    return mapToJson(
-            {
-                    {"rects",     rectsArray.str()},
-                    {"type",      jsonValue("draw")},
-                    {"fakeScore", jsonValue(fakeScore)},
-                    {"score",     jsonValue(score)},
-            }
-    );
-}
-
 
 struct RectSet {
 private:
@@ -239,6 +201,45 @@ public:
     }
 };
 
+
+string buildReportJson(RectSet rectSet, double score, double fakeScore, Input input) {
+    using namespace HttpUtils;
+    auto f = [&](Rect r, int idx) {
+        double h = 1 - 1. * min(r.area(), input.advs[idx].r) / max(r.area(), input.advs[idx].r);
+        double subScore = 1 - h * h;
+        return mapToJson(
+                {
+                        {"l",        jsonValue(r.l)},
+                        {"r",        jsonValue(r.r)},
+                        {"u",        jsonValue(r.u)},
+                        {"d",        jsonValue(r.d)},
+                        {"id",       jsonValue(idx)},
+                        {"need",     jsonValue(input.advs[idx].r)},
+                        {"px",       jsonValue(input.advs[idx].p.x)},
+                        {"py",       jsonValue(input.advs[idx].p.y)},
+                        {"subScore", jsonValue(subScore)}
+                }
+        );
+    };
+    stringstream rectsArray;
+    rectsArray << "[";
+    for (int i = 0; i < rectSet.rects.size(); i++) {
+        if (i != 0) {
+            rectsArray << ",";
+        }
+        rectsArray << f(rectSet.rects[i], i);
+    }
+    rectsArray << "]";
+    return mapToJson(
+            {
+                    {"rects",     rectsArray.str()},
+                    {"type",      jsonValue("draw")},
+                    {"fakeScore", jsonValue(fakeScore)},
+                    {"score",     jsonValue(score)},
+                    {"relTime",   jsonValue(ctx->timer->relative_time_elapsed())}
+            }
+    );
+}
 
 inline Rect shake(Rect rIdx, DIR &dir_dest, int &pushLength) {
     DIR dir = static_cast<DIR>(ctx->rng->next_uint32(0, 4));
@@ -438,7 +439,7 @@ Output solveBySimulatedAnnealing(Input input, const Args &args) {
             if (emit) {
                 auto jsonBuilder = [&]() {
                     // lazy evaluation
-                    return buildReportJson(rectSet.rects, rectSet.getRealScore(), rectSet.score(), input);
+                    return buildReportJson(rectSet, rectSet.getRealScore(), rectSet.score(), input);
                 };
                 ctx->vis->emitJsonWithTimer(jsonBuilder);
             }
@@ -469,6 +470,11 @@ void runMain(Args args, istream &is) {
     auto *timer = new RealTimer(TIME_LIMIT_SECONDS);
     auto *rng = new XorShift();
     auto *vis = new Visualizer(timer);
+    vis->emitJson(HttpUtils::mapToJson(
+            {
+                    {"type", "reset"}
+            }
+    ));
     AHC001VisualizerCommunicator *visCom = AHC001VisualizerCommunicator::start(vis, timer);
 
     registerApplicationContext(new ApplicationContext(timer, rng, vis, visCom));

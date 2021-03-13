@@ -14,12 +14,16 @@ export interface DrawPayload {
     type: "draw"
     rects: Rect[]
     score: number,
-    fakeScore: number
+    fakeScore: number,
+    relTime: number
 }
 
 export interface CommunicationRegisterPayload {
     type: "communication"
     file: string
 }
+export interface ResetPayload {
+    type: "reset"
+}
 
-export type Payload = DrawPayload | CommunicationRegisterPayload;
+export type Payload = DrawPayload | CommunicationRegisterPayload | ResetPayload;

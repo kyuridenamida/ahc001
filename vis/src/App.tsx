@@ -1,9 +1,8 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 
-import logo from './logo.svg';
 import './App.css';
 import {subscribePublishEvent} from "./utils/SocketIOUtils";
-import {DrawPayload, Payload, Rect} from "./models/Payload";
+import {DrawPayload, Rect} from "./models/Payload";
 
 const contributionColor = (subScore: number, overallScore: number) => {
     const d = subScore - overallScore;
@@ -35,11 +34,18 @@ interface Point {
     y: number;
 }
 
+interface HistoryItem {
+    t: number
+    score: number
+}
+
 function App() {
     const [context, setContext] = useState<CanvasRenderingContext2D | null>(null);
     const [payload, setPayload] = useState<DrawPayload | null>();
     const [selectedRectangles, setSelectedRectangles] = useState<Rect[]>([]);
     const [communicationFile, setCommunicationFile] = useState<string | null>();
+
+    const [history, setHistory] = useState<HistoryItem[]>([]);
 
     useEffect(() => {
         const canvas = document.getElementById("canvas") as HTMLCanvasElement | null;
@@ -112,8 +118,12 @@ function App() {
         subscribePublishEvent((payload) => {
             if (payload.type == "draw") {
                 setPayload(payload);
-            } else {
+                history.push({t: payload.relTime, score: payload.score})
+                setHistory(history);
+            } else if (payload.type == "communication") {
                 setCommunicationFile(payload.file);
+            } else {
+                setHistory([]);
             }
         });
     }, []);
@@ -189,8 +199,11 @@ function App() {
                             setEndPoint(null);
                         }}
                 />
-                <div className={"com-file"}>
+                <div className={"some-info"}>
                     Communication File: {communicationFile}
+                </div>
+                <div className={"some-info"}>
+                    Data points: {history.length}
                 </div>
 
                 <div className={"selected-rects"}>
