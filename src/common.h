@@ -42,6 +42,10 @@ struct P {
     bool operator!=(const P &rhs) const {
         return !(rhs == *this);
     }
+
+    int manhattanDist(const P &op){
+        return abs(op.x - x) + abs(op.y - y);
+    }
 };
 
 struct Adv {
@@ -134,150 +138,6 @@ enum DIR {
     RIGHT_DOWN = 7,
     UNKNOWN = -1
 
-};
-
-
-struct RectSet {
-private:
-    double realScore;
-public:
-    int n;
-    vector<Rect> rects;
-    vector<Adv> advs;
-
-
-    bool rollbackable = true;
-    vector<pair<int, Rect> > prevItems;
-    double prevRealScore;
-
-    void init(vector<Rect> rects, vector<Adv> advs) {
-        this->n = rects.size();
-        this->rects = rects;
-        this->advs = advs;
-        this->realScore = realScoreFull();
-        this->rollbackable = false;
-    }
-
-    inline double getRealScore() {
-        return realScore;
-    }
-
-    inline double individualRealScore(int i) {
-        double h = 1 - 1. * min(rects[i].area(), advs[i].r) / max(rects[i].area(), advs[i].r);
-        return (1 - h * h) / n;
-    }
-
-    double realScoreFull() {
-        double ans = 0;
-        for (int i = 0; i < rects.size(); i++) {
-            ans += individualRealScore(i);
-        }
-        return ans;
-    }
-
-    double score() {
-        return realScore;
-    }
-
-    /**
-     * @return if the update is valid
-     */
-    int cnt = 0;
-    int ok = 0;
-
-    bool update(const int i, const Rect &geoRect_, int pushDir, int pushLength) {
-        if (pushLength == 0)
-            return true;
-        auto geoRect = normalizedRect(geoRect_, i);
-        prevItems.clear();
-        prevItems.emplace_back(i, rects[i]);
-        prevRealScore = realScore;
-        rollbackable = true;
-
-        realScore -= individualRealScore(i);
-        rects[i] = geoRect;
-        realScore += individualRealScore(i);
-        bool bad = false;
-        for (int j = 0; j < n; j++) {
-            if (i != j) {
-                auto &&op = rects[j];
-                bool X = overlap(geoRect_.l, geoRect_.r, op.l, op.r);
-                bool Y = overlap(geoRect_.d, geoRect_.u, op.d, op.u);
-                if (X && Y) {
-
-                    prevItems.emplace_back(j, op);
-                    realScore -= individualRealScore(j);
-                    if (pushDir == DIR::LEFT) {
-                        op = Rect(op.l, geoRect_.l, op.d, op.u);
-                    } else if (pushDir == DIR::RIGHT) {
-                        op = Rect(geoRect_.r, op.r, op.d, op.u);
-                    } else if (pushDir == DIR::DOWN) {
-                        op = Rect(op.l, op.r, op.d, geoRect_.d);
-                    } else if (pushDir == DIR::UP) {
-                        op = Rect(op.l, op.r, geoRect_.u, op.u);
-                    } else if (pushDir == DIR::LEFT_DOWN) {
-                        op = Rect(op.l, geoRect_.l, op.d, geoRect_.d);
-                    } else if (pushDir == DIR::RIGHT_UP) {
-                        op = Rect(geoRect_.r, op.r, geoRect_.u, op.u);
-                    } else if (pushDir == DIR::LEFT_UP) {
-                        op = Rect(op.l, geoRect_.l, geoRect_.u, op.u);
-                    } else if (pushDir == DIR::RIGHT_DOWN) {
-                        op = Rect(geoRect_.r, op.r, op.d, geoRect_.d);
-                    }
-                    op = normalizedRect(op, j);
-
-                    realScore += individualRealScore(j);
-
-                    bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
-                    bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
-                    if (X && Y) {
-                        cerr << (geoRect != geoRect_) << " " << pushLength << " " << pushDir << endl;
-                        rollBack();
-                        return false;
-                    }
-                }
-            }
-        }
-        if (!bad) {
-            if (geoRect != geoRect_) {
-                for (int j = 0; j < n; j++) {
-                    if (i != j) {
-                        bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
-                        bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
-                        if (X && Y) {
-//                            cerr << (geoRect != geoRect_) << ")" << endl;
-                            rollBack();
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
-        return true;
-
-    }
-
-    Rect normalizedRect(Rect geoRect, int i) {
-        geoRect.l = max(0, geoRect.l);
-        geoRect.d = max(0, geoRect.d);
-        geoRect.r = min(10000, geoRect.r);
-        geoRect.u = min(10000, geoRect.u);
-        auto q = advs[i].p;
-        geoRect.l = min<int>(geoRect.l, q.x);
-        geoRect.r = max<int>(geoRect.r, q.x + 1);
-        geoRect.d = min<int>(geoRect.d, q.y);
-        geoRect.u = max<int>(geoRect.u, q.y + 1);
-        return geoRect;
-    }
-
-    void rollBack() {
-        assert(rollbackable);
-        realScore = prevRealScore;
-        for (auto &&i : prevItems) {
-            rects[i.first] = i.second;
-        }
-        rollbackable = false;
-    }
 };
 
 #endif //AHC001_SOLUTION_H
