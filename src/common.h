@@ -137,10 +137,4 @@ struct Output {
     }
 };
 
-
-class Solver {
-public:
-    virtual Output solve(Input request) = 0;
-};
-
 #endif //AHC001_SOLUTION_H

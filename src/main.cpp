@@ -1,30 +1,73 @@
-
 #include <iostream>
 #include <bitset>
 #include <algorithm>
 #include <complex>
 #include <set>
+#include <random>
+#include <utility>
 #include "./common.h"
-#include "visclient.h"
+#include "./httputils.h"
 #include "./Timer.h"
 #include "./xorshift.h"
+#include "visualizer.h"
 
 using namespace std;
 
-XorShift xorShift;
+const double TIME_LIMIT_SECONDS = 5;
 
-RealTimer timer(20);
+/**
+ * VisualizerCommunicatorに使われます。
+ */
+struct AHC001VisComResponse {
+    const bool received;
+    const vector<int> removeIndexes;
 
-typedef complex<double> GeoPoint;
-typedef GeoPoint V;
+    AHC001VisComResponse(
+            const bool received,
+            const vector<int> &removeIndexes) : received(received),
+                                                removeIndexes(removeIndexes) {}
 
+    static AHC001VisComResponse readFromStream(istream &is) {
+        vector<int> removeIndexes;
+        int idx;
+        while (is >> idx) {
+            removeIndexes.push_back(idx);
+        }
+        cerr << "Read " << removeIndexes.size() << " delete removeIndexes" << endl;
 
-//double PARAM_START_TEMP = 0.001;
-//double PARAM_END_TEMP = 0.000001;
-double PARAM_START_TEMP = 0.0005;
-double PARAM_END_TEMP = 0.000001;
+        return AHC001VisComResponse(true, removeIndexes);
+    }
 
-int PARAM_SEED = 0;
+    static AHC001VisComResponse empty() {
+        return AHC001VisComResponse(false, {});
+    }
+};
+
+using AHC001VisualizerCommunicator = VisualizerCommunicator<AHC001VisComResponse>;
+
+struct ApplicationContext {
+    RealTimer *timer;
+    XorShift *rng;
+    Visualizer *vis;
+    AHC001VisualizerCommunicator *visCom;
+
+    ApplicationContext(
+            RealTimer *timer,
+            XorShift *rng,
+            Visualizer *vis,
+            AHC001VisualizerCommunicator *visCom
+    ) : timer(timer), rng(rng), vis(vis), visCom(visCom) {}
+};
+
+// Global declaration for handiness
+ApplicationContext *ctx = nullptr;
+
+void registerApplicationContext(ApplicationContext *applicationContext) {
+    assert(ctx == nullptr);
+    ctx = applicationContext;
+}
+
+// Utils
 
 bool overlap(int a, int b, int A, int B) {
     if (B <= a || b <= A) {
@@ -33,21 +76,11 @@ bool overlap(int a, int b, int A, int B) {
     return true;
 }
 
-inline int overlapLength(int a, int b, int A, int B) {
-    return max(0, min(B, b) - max(a, A));
-}
-
-inline bool eq(int a, int b) {
-    return a == b;
-}
-
-
 int ceil(int a, int b) {
     return (a + b - 1) / b;
 }
 
 class GeoRect {
-
 public:
     int l;
     int r;
@@ -62,172 +95,52 @@ public:
         return (r - l) * (u - d);
     }
 
-    bool operator==(const GeoRect &rhs) const {
-        return eq(l, rhs.l) &&
-               eq(r, rhs.r) &&
-               eq(d, rhs.d) &&
-               eq(u, rhs.u);
-    }
-
-    bool operator!=(const GeoRect &rhs) const {
-        return !(rhs == *this);
-    }
-
-    GeoRect expand(int dir, const Adv &adv) {
-        if (l == r || u == d) {
-            return *this;
-        }
-        GeoRect rIdx = *this;
-        double needArea = adv.r - area();
-        const int cap = 10;
-        if (dir == 0 || dir == 1) {
-            int needLength = min(cap, ceil(needArea, (rIdx.u - rIdx.d)));
-            if (dir == 0) {
-                // 左伸ばす
-                rIdx.l -= needLength;
-            } else {
-                // 右伸ばす
-                rIdx.r += needLength;
-            }
-        } else {
-            int needLength = min(cap, ceil(needArea, (rIdx.r - rIdx.l)));
-            if (dir == 2) {
-                // した伸ばす
-                rIdx.d -= needLength;
-            } else {
-                // うえ伸ばす
-                rIdx.u += needLength;
-            }
-        }
-        return rIdx;
-    }
-
     Rect toRect() {
         return Rect(P((int) l, (int) d), Size((int) (r - l), (int) (u - d)));
     }
 };
 
-
-string globalCommunicationFile;
-
-void registerCommunicationFile(const string communicationFile) {
-    auto quoted = [&](string key) {
-        return "\"" + key + "\"";
-    };
-    stringstream ss;
-    ss << "{"
-       << quoted("type") << ":" << quoted("communication") << ","
-       << quoted("file") << ":" << quoted(communicationFile)
-       << "}";
-    emitJson(ss.str());
-    globalCommunicationFile = communicationFile;
-}
-
-vector<int> removeIndexes() {
-    registerCommunicationFile(globalCommunicationFile);
-    cerr << "Communicating...";
-    ifstream ifs(globalCommunicationFile);
-    if (!ifs.is_open()) {
-        cerr << "no file found yet." << endl;
-        return {};
-    };
-    vector<int> indexes;
-    int idx;
-    while (ifs >> idx) {
-        indexes.push_back(idx);
-        cerr << idx << " ";
-    }
-    cerr << endl;
-    ifs.close();
-    cerr << " and you have " << indexes.size() << " delete indexes" << endl;
-
-    ofstream ofs(globalCommunicationFile);
-    ofs.close();
-
-    return indexes;
-}
-
-double _lstsub2 = -1;
-
-vector<int> removeIndexesWithTimer() {
-#ifndef CLION
-    return {};
-#endif
-    double now = timer.time_elapsed();
-    if (now - _lstsub2 > 0.2) {
-        auto array = removeIndexes();
-        _lstsub2 = now;
-        return array;
-    }
-    return {};
-}
-
-string createJson(vector<GeoRect> rects, double score, double fakeScore, Input input) {
-    auto quoted = [&](string key) {
-        return "\"" + key + "\"";
-    };
-
-    auto f = [&](GeoRect r, int idx) {
-        stringstream ss;
-        double h = 1 - 1. * min(r.area(), input.advs[idx].r) / max(r.area(), input.advs[idx].r);
-        double subScore = 1 - h * h;
-
-        ss << "{"
-           << quoted("l") << ":" << r.l << ","
-           << quoted("r") << ":" << r.r << ","
-           << quoted("u") << ":" << r.u << ","
-           << quoted("d") << ":" << r.d << ","
-           << quoted("id") << ":" << idx << ","
-           << quoted("need") << ":" << input.advs[idx].r << ","
-           << quoted("px") << ":" << input.advs[idx].p.x << ","
-           << quoted("py") << ":" << input.advs[idx].p.y << ","
-
-           << quoted("subScore") << ":" << subScore
-           << "}";
-        return ss.str();
-    };
-    stringstream ss;
-    ss << "{" << quoted("rects") << ": [";
-    for (int i = 0; i < rects.size(); i++) {
-        if (i != 0) {
-            ss << ",\n";
-        }
-        ss << f(rects[i], i);
-    }
-    ss << "],\n";
-    ss << quoted("type") << ":" << quoted("draw") << ",\n";
-    ss << quoted("fakeScore") << ":" << fakeScore << ",\n";
-    ss << quoted("score") << ": " << score << "\n";
-    ss << "}";
-    return ss.str();
-}
-
-Output createOutput(vector<GeoRect> rects, Input input) {
-    vector<OutputItem> res;
-    for (auto i : input.advs) {
-        res.emplace_back(i, rects[i.id].toRect());
-    }
-    return Output(input, res);
-}
-
-
 double _lstsub = -1;
 
-void emitJsonWithTimer(vector<GeoRect> rects, double realScore, double fakeScore, Input input) {
-    double now = timer.time_elapsed();
-    if (now - _lstsub > 0.016) {
-        emitJson(createJson(rects, realScore, fakeScore, input));
-        _lstsub = now;
-    }
-}
 
-inline GeoRect shrink(GeoRect rIdx, const Adv &adv) {
-    auto q = adv.p;
-    rIdx.l = q.x;
-    rIdx.r = q.x + 1;
-    rIdx.d = q.y;
-    rIdx.u = q.y + 1;
-    return rIdx;
+string buildReportJson(vector<GeoRect> rects, double score, double fakeScore, Input input) {
+    using namespace HttpUtils;
+    auto f = [&](GeoRect r, int idx) {
+        double h = 1 - 1. * min(r.area(), input.advs[idx].r) / max(r.area(), input.advs[idx].r);
+        double subScore = 1 - h * h;
+        return mapToJson(
+                {
+                        {"l",        jsonValue(r.l)},
+                        {"r",        jsonValue(r.r)},
+                        {"u",        jsonValue(r.u)},
+                        {"d",        jsonValue(r.d)},
+                        {"id",       jsonValue(idx)},
+                        {"need",     jsonValue(input.advs[idx].r)},
+                        {"px",       jsonValue(input.advs[idx].p.x)},
+                        {"py",       jsonValue(input.advs[idx].p.y)},
+                        {"subScore", jsonValue(subScore)}
+                }
+        );
+    };
+    stringstream rectsArray;
+    rectsArray << "[";
+    for (int i = 0; i < rects.size(); i++) {
+        if (i != 0) {
+            rectsArray << ",";
+        }
+        rectsArray << f(rects[i], i);
+    }
+    rectsArray << "]";
+    auto log =  mapToJson(
+            {
+                    {"rects",     rectsArray.str()},
+                    {"type",      jsonValue("draw")},
+                    {"fakeScore", jsonValue(fakeScore)},
+                    {"score",     jsonValue(score)},
+            }
+    );
+    cerr << log << endl;
+    return log;
 }
 
 struct RectSet {
@@ -367,8 +280,8 @@ public:
 };
 
 inline GeoRect transform1(GeoRect rIdx, int &dir_dest, int &diff) {
-    int dir = xorShift.next_uint32(0, 4);
-    int x = xorShift.next_uint32(-100, 100);
+    int dir = ctx->rng->next_uint32(0, 4);
+    int x = ctx->rng->next_uint32(-100, 100);
     if (dir == 0 || dir == 1) {
         if (dir == 0) {
             // 左伸ばす
@@ -395,8 +308,8 @@ inline GeoRect transform1(GeoRect rIdx, int &dir_dest, int &diff) {
 }
 
 inline GeoRect transform2(GeoRect rIdx, int &dir_dest, int &diff) {
-    int dir = xorShift.next_uint32(0, 4);
-    int x = xorShift.next_uint32(-100, 100);
+    int dir = ctx->rng->next_uint32(0, 4);
+    int x = ctx->rng->next_uint32(-100, 100);
     if (dir == 0 || dir == 1) {
         if (dir == 0) {
             // 左伸ばす
@@ -421,7 +334,7 @@ inline GeoRect transform2(GeoRect rIdx, int &dir_dest, int &diff) {
 inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest, int diff) {
     double needArea = adv.r - rIdx.area();
     const int cap = 10;
-    int dir = xorShift.next_uint32(0, 8);
+    int dir = ctx->rng->next_uint32(0, 8);
     if (dir == 0 || dir == 1) {
         int needLength = min(cap, ceil(needArea, (rIdx.u - rIdx.d)));
         if (dir == 0) {
@@ -444,25 +357,25 @@ inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest, int diff)
         diff = needLength;
     } else if (dir == 4) {
         // 左したのばす
-        int needLength = xorShift.next_uint32(1, 10);
+        int needLength = ctx->rng->next_uint32(1, 10);
         rIdx.l -= needLength;
         rIdx.d -= needLength;
         diff = needLength;
     } else if (dir == 5) {
         // 右上のばす
-        int needLength = xorShift.next_uint32(1, 10);
+        int needLength = ctx->rng->next_uint32(1, 10);
         rIdx.r += needLength;
         rIdx.u += needLength;
         diff = needLength;
     } else if (dir == 6) {
         // 左上のばす
-        int needLength = xorShift.next_uint32(1, 10);
+        int needLength = ctx->rng->next_uint32(1, 10);
         rIdx.l -= needLength;
         rIdx.u += needLength;
         diff = needLength;
     } else if (dir == 7) {
         // 右下のばす
-        int needLength = xorShift.next_uint32(1, 10);
+        int needLength = ctx->rng->next_uint32(1, 10);
         rIdx.r += needLength;
         rIdx.d -= needLength;
         diff = needLength;
@@ -471,10 +384,40 @@ inline GeoRect transform3(GeoRect rIdx, const Adv &adv, int &dir_dest, int diff)
     return rIdx;
 }
 
+struct Args {
+    static const int EXPECTED_PARAM_COUNT = 3;
+    double saStartTemp = 0.0005;
+    double saEndTemp = 0.000001;
+    int randomSeed = 0;
 
-class PhysicsSolver : Solver {
+    Args() {
+
+    }
+
+    static Args fromProgramArgs(int argc, char **argv) {
+        if (argc == 1) {
+            // No arg is allowed
+            return Args();
+        }
+        // argv[0] == 'program file name'
+        assert(argc == EXPECTED_PARAM_COUNT + 1);
+        stringstream ssForParsing;
+        for (int i = 1; i <= argc; i++) {
+            ssForParsing << argv[i] << " ";
+        }
+        Args args;
+        assert(ssForParsing >> args.saStartTemp >> args.saEndTemp >> args.randomSeed);
+    }
+};
+
+
+class SimulatedAnnealingSolver {
 public:
-    Output solve(Input input) {
+    SimulatedAnnealingSolver() {}
+
+public:
+
+    Output solve(Input input, const Args &args) {
         vector<GeoRect> rects;
         for (auto a : input.advs) {
             rects.emplace_back(a.p.x, a.p.x + 1, a.p.y, a.p.y + 1);
@@ -487,11 +430,11 @@ public:
         auto attempt = [&](RectSet &rectSet, RectSet &bestRectSet, bool emit, double t) {
             const double currentScore = rectSet.score();
             iter++;
-            auto remIndexes = removeIndexesWithTimer();
+            auto resp = ctx->visCom->receiveResponseIfExists();
             bool force = false;
-            if (remIndexes.size() > 0) {
+            if (resp.received) {
                 auto r = rectSet.rects;
-                for (auto remi : remIndexes) {
+                for (auto remi : resp.removeIndexes) {
                     auto q = input.advs[remi].p;
                     r[remi].l = q.x;
                     r[remi].r = q.x + 1;
@@ -500,30 +443,21 @@ public:
                 }
                 rectSet.init(r, input.advs);
                 force = true;
-                forceIdx = remIndexes;
+                forceIdx = resp.removeIndexes;
             } else {
                 int idx =
-                        forceIdx.size() > 0 ? forceIdx[xorShift.next_uint32(0, forceIdx.size())] : xorShift.next_uint32(
-                                0, input.n);
-//                vector< pair<double,int> > values;
-//                if( timer.time_elapsed() < 30.0) {
-//                    for (int i = 0; i < rectSet.n; i++) {
-//                        values.emplace_back(rectSet.individualRealScore(i), i);
-//                    }
-//                    sort(values.begin(), values.end());
-//                    values.resize(5);
-//                    idx = values[xorShift.next_uint32(values.size())].second;
-//                }
+                        !forceIdx.empty() ? forceIdx[ctx->rng->next_uint32(0, forceIdx.size())]
+                                          : ctx->rng->next_uint32(0, input.n);
 
                 GeoRect rIdx = rectSet.rects[idx];
-                int rrr = xorShift.next_uint32(0, 3);
+                int rrr = ctx->rng->next_uint32(0, 3);
                 int dir = -1;
                 int diff = -1;
                 if (rrr == 0) {
                     rIdx = transform1(rIdx, dir, diff);
-                } else if( rrr == 1) {
+                } else if (rrr == 1) {
                     rIdx = transform2(rIdx, dir, diff);
-                }else if( rrr == 2){
+                } else if (rrr == 2) {
 
                     rIdx = transform3(rIdx, input.advs[idx], dir, diff);
                 }
@@ -531,18 +465,20 @@ public:
 
             }
             double nextScore = rectSet.score();
-            double p = xorShift.next_prob();
+            double p = ctx->rng->next_prob();
             bool ok = false;
             if (nextScore > 0 && (force || p < exp((nextScore - currentScore) / t))) {
-//            if (nextScore > currentScore) {
                 if (rectSet.getRealScore() > bestRectSet.getRealScore()) {
                     ok = true;
                     bestRectSet = rectSet;
                 }
                 if (emit) {
-                    emitJsonWithTimer(rectSet.rects, rectSet.getRealScore(), rectSet.score(), input);
+                    auto jsonBuilder = [&]() {
+                        // lazy evaluation
+                        return buildReportJson(rectSet.rects, rectSet.getRealScore(), rectSet.score(), input);
+                    };
+                    ctx->vis->emitJsonWithTimer(jsonBuilder);
                 }
-
             } else {
                 rectSet.rollBack();
                 ok = false;
@@ -550,69 +486,51 @@ public:
             return ok;
         };
 
-        double start_temp = PARAM_START_TEMP;
-        double end_temp = PARAM_END_TEMP;
+        double startTemp = args.saStartTemp;
+        double endTemp = args.saEndTemp;
 
         RectSet rectSet;
         rectSet.init(rects, input.advs);
-        while (!timer.is_TLE()) {
-            double temp =
-                    start_temp +
-                    timer.relative_time_elapsed() * (end_temp - start_temp);
+        while (!ctx->timer->is_TLE()) {
+            double temp = startTemp +
+                          ctx->timer->relative_time_elapsed() * (endTemp - startTemp);
             attempt(rectSet, globalBest, true, temp);
-
-
         }
-        //　TODO: 高速化 check herasu
+        return createOutput(globalBest, input);
+    }
 
-
-        // TODO: 明日へのTODO 当たり判定もしくは不正box修正アルゴリズムバグってない?
-        // TODO: あとでかすぎるやつ検出する
-        // TODO: かぶりを消すロジックがしょぼい
-        // TODO: 絶対にたどり着けない頂点に対しては当たり判定チェックしない
-
-        // TODO: 縮めるときに他を持ってくる? 伸ばすのと等価だね
-        // TODO: プロダクションとテストでスコアが違うの、なんで?
-//        cout << iter << endl;
-//        cout << globalBest.score() << endl;
-        // sanitizerまわりぽいなあ
-        return createOutput(globalBest.rects, input);
+private:
+    static Output createOutput(RectSet rects, const Input &input) {
+        vector<OutputItem> res;
+        for (auto i : input.advs) {
+            res.emplace_back(i, rects.rects[i.id].toRect());
+        }
+        return Output(input, res);
     }
 };
 
-string itos(int n) {
-    stringstream ss;
-    ss << n;
-    return ss.str();
-}
+class Main {
+public:
+    static void run(Args args, istream &is) {
+        auto *timer = new RealTimer(TIME_LIMIT_SECONDS);
+        auto *rng = new XorShift();
+        auto *vis = new Visualizer(timer);
+        AHC001VisualizerCommunicator *visCom = AHC001VisualizerCommunicator::start(vis, timer);
+
+        registerApplicationContext(new ApplicationContext(timer, rng, vis, visCom));
+
+        Output sol = SimulatedAnnealingSolver().solve(Input::fromInputStream(is), args);
+        sol.output(cout);
+    }
+
+};
 
 int main(int argc, char *argv[]) {
-    int nn = argc-1;
-    if (nn != 0) {
-        assert(nn == 3);
-        stringstream ss;
-        for (int i = 1; i <= nn; i++) {
-            ss << " " << argv[i];
-        }
-        ss >> PARAM_START_TEMP >> PARAM_END_TEMP >> PARAM_SEED;
-//        cout << "start:" << PARAM_START_TEMP << endl;
-//        cout << "end:" << PARAM_END_TEMP<< endl;
-    }
+    Args args = Args::fromProgramArgs(argc, argv);
 #ifdef CLION
-    srand(time(NULL));
-    const string communicationFile = "/tmp/" + itos(rand() % 100000) + ".com";
-    registerCommunicationFile(communicationFile);
-#endif
-    srand(PARAM_SEED);
-#ifdef CLION
-    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0096.txt");
-    const Input input = Input::fromInputStream(inputSrc);
+    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0098.txt");
+    Main::run(args, inputSrc);
 #else
-    const Input input = Input::fromInputStream(cin);
+    Main::run(args, cin);
 #endif
-
-//    input.outputToStream(cerr);
-    auto sol = PhysicsSolver().solve(input);
-    sol.output(cout);
-//    cerr << sol.relativeScore() << endl;
 }
