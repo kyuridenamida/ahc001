@@ -7,7 +7,8 @@
 
 
 #include <functional>
-#include "Timer.h"
+#include "timer.h"
+#include "./httputils.h"
 
 class Visualizer {
     RealTimer *timer;
@@ -65,12 +66,16 @@ public:
     }
 
     VisComResponse receiveResponseIfExists() {
+#ifndef CLION
+        return VisComResponse::empty();
+#endif
         double now = timer->time_elapsed();
         if (now - lastCommunicationTime > 0.2) {
             //一応ファイルを再度Visualizerに登録する。
             sendRegisterFileToVisualizer();
             VisComResponse response = readResponseFromFileIfExists();
             lastCommunicationTime = now;
+            return response;
         }
         return VisComResponse::empty();
     }

@@ -12,7 +12,7 @@
 #ifndef MARATHON_HELPERS_TIMER_HPP
 #define MARATHON_HELPERS_TIMER_HPP
 
-class Timer {
+class timer {
 public:
     virtual double time_elapsed() = 0;
 
@@ -24,7 +24,7 @@ public:
 };
 
 
-class RealTimer : Timer {
+class RealTimer : timer {
 private:
     const static unsigned long long int cycle_per_sec = 2950000000;
     unsigned long long int begin_cycle;
