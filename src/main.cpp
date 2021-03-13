@@ -242,7 +242,7 @@ public:
 
 inline Rect shake(Rect rIdx, DIR &dir_dest, int &pushLength) {
     DIR dir = static_cast<DIR>(ctx->rng->next_uint32(0, 4));
-    int moveAmount = ctx->rng->next_uint32(-100, 100);
+    int moveAmount = ctx->rng->next_uint32(1, 100);
     if (dir == DIR::LEFT || dir == DIR::RIGHT) {
         if (dir == DIR::LEFT) {
             // 左伸ばす
@@ -270,7 +270,7 @@ inline Rect shake(Rect rIdx, DIR &dir_dest, int &pushLength) {
 
 inline Rect extend(Rect newRect, DIR &dir_dest, int &diff) {
     DIR dir = static_cast<DIR>(ctx->rng->next_uint32(0, 4));
-    int pushLength = ctx->rng->next_uint32(-100, 100);
+    int pushLength = ctx->rng->next_uint32(-200, 200);
     if (dir == DIR::LEFT || dir == DIR::RIGHT) {
         if (dir == DIR::LEFT) {
             // 左伸ばす
@@ -452,7 +452,7 @@ Output solveBySimulatedAnnealing(Input input, const Args &args) {
                       ctx->timer->relative_time_elapsed() * (endTemp - startTemp);
         attempt(rectSet, globalBest, true, temp);
     }
-    cout << iter << endl;
+//    cout << iter << endl;
     return Output(globalBest.rects);
 }
 
@@ -465,13 +465,13 @@ void runMain(Args args, istream &is) {
     registerApplicationContext(new ApplicationContext(timer, rng, vis, visCom));
 
     Output solution = solveBySimulatedAnnealing(Input::fromInputStream(is), args);
-//    solution.output(cout);
+    solution.output(cout);
 }
 
 int main(int argc, char *argv[]) {
     Args args = Args::fromProgramArgs(argc, argv);
 #ifdef CLION
-    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0098.txt");
+    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0096.txt");
     runMain(args, inputSrc);
 #else
     runMain(args, cin);
