@@ -104,11 +104,6 @@ string buildReportJson(vector<Rect> rects, double score, double fakeScore, Input
 }
 
 
-/**
- * @return if the update is valid
- */
-int mat[200][200];
-
 struct RectSet {
 private:
     double realScore;
@@ -170,10 +165,6 @@ public:
                 bool X = overlap(geoRect_.l, geoRect_.r, op.l, op.r);
                 bool Y = overlap(geoRect_.d, geoRect_.u, op.d, op.u);
                 if (X && Y) {
-                    if (mat[i][j]++ == 0) {
-                        cout << i << " " << j << " " << " " << ctx->timer->relative_time_elapsed() << " " << advs[i].p.manhattanDist(advs[j].p) << endl;
-
-                    }
 
                     prevItems.emplace_back(j, op);
                     realScore -= individualRealScore(j);
@@ -227,10 +218,10 @@ public:
     }
 
     Rect normalizedRect(Rect geoRect, int i) {
-        geoRect.l = max(0, geoRect.l);
-        geoRect.d = max(0, geoRect.d);
-        geoRect.r = min(10000, geoRect.r);
-        geoRect.u = min(10000, geoRect.u);
+        geoRect.l = max<int>(0, geoRect.l);
+        geoRect.d = max<int>(0, geoRect.d);
+        geoRect.r = min<int>(10000, geoRect.r);
+        geoRect.u = min<int>(10000, geoRect.u);
         auto q = advs[i].p;
         geoRect.l = min<int>(geoRect.l, q.x);
         geoRect.r = max<int>(geoRect.r, q.x + 1);
@@ -462,6 +453,7 @@ Output solveBySimulatedAnnealing(Input input, const Args &args) {
                       ctx->timer->relative_time_elapsed() * (endTemp - startTemp);
         attempt(rectSet, globalBest, true, temp);
     }
+    cout << iter << endl;
     return Output(globalBest.rects);
 }
 
@@ -474,7 +466,7 @@ void runMain(Args args, istream &is) {
     registerApplicationContext(new ApplicationContext(timer, rng, vis, visCom));
 
     Output solution = solveBySimulatedAnnealing(Input::fromInputStream(is), args);
-    solution.output(cout);
+//    solution.output(cout);
 }
 
 int main(int argc, char *argv[]) {

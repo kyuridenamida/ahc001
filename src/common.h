@@ -56,21 +56,21 @@ struct Adv {
 
 class Rect {
 public:
-    int l;
-    int r;
-    int d;
-    int u;
+    short l;
+    short r;
+    short d;
+    short u;
 
     Rect() {}
 
-    Rect(int l, int r, int d, int u) : l(l), r(r), d(d), u(u) {}
+    Rect(short l, short r, short d, short u) : l(l), r(r), d(d), u(u) {}
 
     int area() {
-        return (r - l) * (u - d);
+        return (int) (r - l) * (u - d);
     }
 
     static Rect onePixelRect(const P &leftDownP) {
-        return {leftDownP.x, leftDownP.x + 1, leftDownP.y, leftDownP.y + 1};
+        return Rect(leftDownP.x, leftDownP.x + 1, leftDownP.y, leftDownP.y + 1);
     }
 
     bool operator==(const Rect &rhs) const {
