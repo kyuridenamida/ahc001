@@ -12,7 +12,7 @@
 
 class Visualizer {
     RealTimer *timer;
-    const string SEND_JSON_END_POINT = "http://localhost:8888/json/";
+    const string SEND_JSON_END_POINT = "http://localhost:8888/json/publish";
 public:
     Visualizer(RealTimer *realTimer) : timer(realTimer) {
     }

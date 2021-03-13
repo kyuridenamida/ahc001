@@ -8,14 +8,28 @@ const fs = require('fs');
 
 const port = Number(process.env.PORT || 8888);
 app.use(express.json())
-app.post('/json/', function (req: any, res: any) {
+
+interface JsonPublishRequest {
+    body: any; // どんな json content でもOK
+}
+
+app.post('/json/publish', function (req: JsonPublishRequest, res: any) {
     io.sockets.emit("publish", req.body);
     res.send("ok")
 });
-app.post('/write/', function (req: any, res: any) {
+
+interface WriteRequest {
+    body: {
+        file: string
+        fileContent: string
+    }
+}
+
+
+// セキュリティ的によろしくない(任意パスに任意内容を書き込める)のでインターネットに公開しないこと
+app.post('/write/', function (req: WriteRequest, res: any) {
     const file: string = req.body.file;
-    const remIndexes: number[] = req.body.remIndexes;
-    fs.writeFile(file, remIndexes.map(x => `${x}`).join(" "), (err: ErrnoException | null) => {
+    fs.writeFile(file, req.body.fileContent, (err: ErrnoException | null) => {
         if (err) {
             res.send(JSON.stringify(err));
             return;

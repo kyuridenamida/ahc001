@@ -11,7 +11,7 @@
 
 using namespace std;
 
-const double TIME_LIMIT_SECONDS = 5;
+const double TIME_LIMIT_SECONDS = 500;
 
 /**
  * VisualizerCommunicatorに使われます。
