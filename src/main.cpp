@@ -13,11 +13,18 @@ using namespace std;
 
 XorShift xorShift;
 
-RealTimer timer(5);
+RealTimer timer(20);
 
 typedef complex<double> GeoPoint;
 typedef GeoPoint V;
 
+
+//double PARAM_START_TEMP = 0.001;
+//double PARAM_END_TEMP = 0.000001;
+double PARAM_START_TEMP = 0.0005;
+double PARAM_END_TEMP = 0.000001;
+
+int PARAM_SEED = 0;
 
 bool overlap(int a, int b, int A, int B) {
     if (B <= a || b <= A) {
@@ -26,7 +33,7 @@ bool overlap(int a, int b, int A, int B) {
     return true;
 }
 
-int overlapLength(int a, int b, int A, int B) {
+inline int overlapLength(int a, int b, int A, int B) {
     return max(0, min(B, b) - max(a, A));
 }
 
@@ -266,8 +273,8 @@ public:
     }
 
 
-    void update(int i, const GeoRect &geoRect_, int dir, int diff) {
-        if( diff == 0 )
+    void update(const int i, const GeoRect &geoRect_, int dir, int diff) {
+        if (diff == 0)
             return;
         auto geoRect = normalizedRect(geoRect_, i);
         prevItems.clear();
@@ -278,44 +285,54 @@ public:
         realScore -= individualRealScore(i);
         rects[i] = geoRect;
         realScore += individualRealScore(i);
-
-        for (int j = 0; j < n; j++) {
-            if (i != j) {
-                bool X = overlap(geoRect_.l, geoRect_.r, rects[j].l, rects[j].r);
-                bool Y = overlap(geoRect_.d, geoRect_.u, rects[j].d, rects[j].u);
-                if (X && Y) {
-                    prevItems.emplace_back(j, rects[j]);
-                    realScore -= individualRealScore(j);
-                    if (dir == 0) {
-                        rects[j] = GeoRect(rects[j].l, geoRect_.l, rects[j].d, rects[j].u);
-                    } else if (dir == 1) {
-                        rects[j] = GeoRect(geoRect_.r, rects[j].r, rects[j].d, rects[j].u);
-                    } else if (dir == 2) {
-                        rects[j] = GeoRect(rects[j].l, rects[j].r, rects[j].d, geoRect_.d);
-                    } else if (dir == 3) {
-                        rects[j] = GeoRect(rects[j].l, rects[j].r, geoRect_.u, rects[j].u);
-                    } else if (dir == 4) {
-                        rects[j] = GeoRect(rects[j].l, geoRect_.l, rects[j].d, geoRect_.d);
-                    } else if (dir == 5) {
-                        rects[j] = GeoRect(geoRect_.r, rects[j].r, geoRect_.u, rects[j].u);
-                    } else if (dir == 6) {
-                        rects[j] = GeoRect(rects[j].l, geoRect_.l, geoRect_.u, rects[j].u);
-                    } else if (dir == 7) {
-                        rects[j] = GeoRect(geoRect_.r, rects[j].r, rects[j].d, geoRect_.d);
-                    }
-                    rects[j] = normalizedRect(rects[j], j);
-
-                    realScore += individualRealScore(j);
-                }
-            }
-        }
         bool bad = false;
         for (int j = 0; j < n; j++) {
             if (i != j) {
-                bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
-                bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
+                auto &&op = rects[j];
+                bool X = overlap(geoRect_.l, geoRect_.r, op.l, op.r);
+                bool Y = overlap(geoRect_.d, geoRect_.u, op.d, op.u);
                 if (X && Y) {
-                    bad = true;
+                    prevItems.emplace_back(j, op);
+                    realScore -= individualRealScore(j);
+                    if (dir == 0) {
+                        op = GeoRect(op.l, geoRect_.l, op.d, op.u);
+                    } else if (dir == 1) {
+                        op = GeoRect(geoRect_.r, op.r, op.d, op.u);
+                    } else if (dir == 2) {
+                        op = GeoRect(op.l, op.r, op.d, geoRect_.d);
+                    } else if (dir == 3) {
+                        op = GeoRect(op.l, op.r, geoRect_.u, op.u);
+                    } else if (dir == 4) {
+                        op = GeoRect(op.l, geoRect_.l, op.d, geoRect_.d);
+                    } else if (dir == 5) {
+                        op = GeoRect(geoRect_.r, op.r, geoRect_.u, op.u);
+                    } else if (dir == 6) {
+                        op = GeoRect(op.l, geoRect_.l, geoRect_.u, op.u);
+                    } else if (dir == 7) {
+                        op = GeoRect(geoRect_.r, op.r, op.d, geoRect_.d);
+                    }
+                    op = normalizedRect(op, j);
+
+                    realScore += individualRealScore(j);
+
+                    bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
+                    bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
+                    if (X && Y) {
+                        bad = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!bad) {
+            for (int j = 0; j < n; j++) {
+                if (i != j) {
+                    bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
+                    bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
+                    if (X && Y) {
+                        bad = true;
+                        break;
+                    }
                 }
             }
         }
@@ -351,7 +368,7 @@ public:
 
 inline GeoRect transform1(GeoRect rIdx, int &dir_dest, int &diff) {
     int dir = xorShift.next_uint32(0, 4);
-    int x = xorShift.next_uint32(-10, 100);
+    int x = xorShift.next_uint32(-100, 100);
     if (dir == 0 || dir == 1) {
         if (dir == 0) {
             // 左伸ばす
@@ -369,6 +386,30 @@ inline GeoRect transform1(GeoRect rIdx, int &dir_dest, int &diff) {
         } else {
             // うえ伸ばす
             rIdx.d += x;
+            rIdx.u += x;
+        }
+    }
+    diff = x;
+    dir_dest = dir;
+    return rIdx;
+}
+
+inline GeoRect transform2(GeoRect rIdx, int &dir_dest, int &diff) {
+    int dir = xorShift.next_uint32(0, 4);
+    int x = xorShift.next_uint32(-100, 100);
+    if (dir == 0 || dir == 1) {
+        if (dir == 0) {
+            // 左伸ばす
+            rIdx.l -= x;
+        } else {
+            rIdx.r += x;
+        }
+    } else {
+        if (dir == 2) {
+            // した伸ばす
+            rIdx.d -= x;
+        } else {
+            // うえ伸ばす
             rIdx.u += x;
         }
     }
@@ -475,12 +516,15 @@ public:
 //                }
 
                 GeoRect rIdx = rectSet.rects[idx];
-                int rrr = xorShift.next_uint32(0, 2);
+                int rrr = xorShift.next_uint32(0, 3);
                 int dir = -1;
                 int diff = -1;
                 if (rrr == 0) {
                     rIdx = transform1(rIdx, dir, diff);
-                } else {
+                } else if( rrr == 1) {
+                    rIdx = transform2(rIdx, dir, diff);
+                }else if( rrr == 2){
+
                     rIdx = transform3(rIdx, input.advs[idx], dir, diff);
                 }
                 rectSet.update(idx, rIdx, dir, diff);
@@ -506,8 +550,8 @@ public:
             return ok;
         };
 
-        double start_temp = 0.001;
-        double end_temp = 0.000001;
+        double start_temp = PARAM_START_TEMP;
+        double end_temp = PARAM_END_TEMP;
 
         RectSet rectSet;
         rectSet.init(rects, input.advs);
@@ -529,6 +573,8 @@ public:
 
         // TODO: 縮めるときに他を持ってくる? 伸ばすのと等価だね
         // TODO: プロダクションとテストでスコアが違うの、なんで?
+//        cout << iter << endl;
+//        cout << globalBest.score() << endl;
         // sanitizerまわりぽいなあ
         return createOutput(globalBest.rects, input);
     }
@@ -540,15 +586,26 @@ string itos(int n) {
     return ss.str();
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+    int nn = argc-1;
+    if (nn != 0) {
+        assert(nn == 3);
+        stringstream ss;
+        for (int i = 1; i <= nn; i++) {
+            ss << " " << argv[i];
+        }
+        ss >> PARAM_START_TEMP >> PARAM_END_TEMP >> PARAM_SEED;
+//        cout << "start:" << PARAM_START_TEMP << endl;
+//        cout << "end:" << PARAM_END_TEMP<< endl;
+    }
 #ifdef CLION
     srand(time(NULL));
     const string communicationFile = "/tmp/" + itos(rand() % 100000) + ".com";
     registerCommunicationFile(communicationFile);
 #endif
-    srand(0);
+    srand(PARAM_SEED);
 #ifdef CLION
-    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0098.txt");
+    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0096.txt");
     const Input input = Input::fromInputStream(inputSrc);
 #else
     const Input input = Input::fromInputStream(cin);
