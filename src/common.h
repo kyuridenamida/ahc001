@@ -231,6 +231,7 @@ public:
                     bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
                     bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
                     if (X && Y) {
+                        cerr << (geoRect != geoRect_) << " " << pushLength << " " << pushDir << endl;
                         rollBack();
                         return false;
                     }

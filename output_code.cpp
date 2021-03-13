@@ -188,6 +188,9 @@ public:
     /**
      * @return if the update is valid
      */
+    int cnt = 0;
+    int ok = 0;
+
     bool update(const int i, const Rect &geoRect_, int pushDir, int pushLength) {
         if (pushLength == 0)
             return true;
@@ -207,6 +210,7 @@ public:
                 bool X = overlap(geoRect_.l, geoRect_.r, op.l, op.r);
                 bool Y = overlap(geoRect_.d, geoRect_.u, op.d, op.u);
                 if (X && Y) {
+
                     prevItems.emplace_back(j, op);
                     realScore -= individualRealScore(j);
                     if (pushDir == DIR::LEFT) {
@@ -233,14 +237,15 @@ public:
                     bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
                     bool Y = overlap(rects[i].d, rects[i].u, rects[j].d, rects[j].u);
                     if (X && Y) {
+//                         cerr << (geoRect != geoRect_) << " " << pushLength << " " << pushDir << endl;
                         rollBack();
                         return false;
                     }
                 }
             }
         }
-        if( geoRect != geoRect_) {
-            if (!bad) {
+        if (!bad) {
+            if (geoRect != geoRect_) {
                 for (int j = 0; j < n; j++) {
                     if (i != j) {
                         bool X = overlap(rects[i].l, rects[i].r, rects[j].l, rects[j].r);
@@ -816,12 +821,16 @@ public:
     }
 
     VisComResponse receiveResponseIfExists() {
+#ifndef CLION
+        return VisComResponse::empty();
+#endif
         double now = timer->time_elapsed();
         if (now - lastCommunicationTime > 0.2) {
             //一応ファイルを再度Visualizerに登録する。
             sendRegisterFileToVisualizer();
             VisComResponse response = readResponseFromFileIfExists();
             lastCommunicationTime = now;
+            return response;
         }
         return VisComResponse::empty();
     }
