@@ -456,17 +456,14 @@ Output solveBySimulatedAnnealing(Input input, const Args &args) {
     rectSet.init(rects, input.advs);
 
     auto computeTemperature = [&](double progress) {
-        if( progress > M_PI / 5 ){
-            return 0.00001 * (1-progress);
-        }
-        return args.saStartTemp - args.saStartTemp * sin(progress * 2.5 * M_PI) * sin(progress * 2.5 * M_PI);
+        return args.saStartTemp
+               + progress * (args.saEndTemp - args.saStartTemp);
     };
 
     while (!ctx->timer->is_TLE()) {
         double T = computeTemperature(ctx->timer->relative_time_elapsed());
         attempt(rectSet, globalBest, true, T);
     }
-//    cout << iter << " " << globalBest.score() << endl;
     return Output(globalBest.rects);
 }
 

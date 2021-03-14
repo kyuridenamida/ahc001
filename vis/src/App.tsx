@@ -4,17 +4,6 @@ import './App.css';
 import {subscribePublishEvent} from "./utils/SocketIOUtils";
 import {DrawPayload, Rect} from "./models/Payload";
 
-const contributionColor = (subScore: number, overallScore: number) => {
-    const d = subScore - overallScore;
-    if (Math.abs(d) <= 0.0) {
-        return "rgba(255 , 255, 255, 1)";
-    } else if (d < 0) {
-        return "rgba(255, 64, 64, 1)";
-    } else {
-        return "rgba(128, 255, 64, 1)"
-    }
-}
-
 const scoreToColor = (score: number, trans: number) => {
     if (score <= 0.5) {
         return `rgba(255, 64, 64, ${trans})`;
