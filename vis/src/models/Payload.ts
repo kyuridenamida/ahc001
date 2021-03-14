@@ -15,7 +15,8 @@ export interface DrawPayload {
     rects: Rect[]
     score: number,
     fakeScore: number,
-    relTime: number
+    relTime: number,
+    temperature: number,
 }
 
 export interface CommunicationRegisterPayload {

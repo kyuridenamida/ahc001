@@ -11,7 +11,7 @@
 
 using namespace std;
 
-const double TIME_LIMIT_SECONDS = 500;
+const double TIME_LIMIT_SECONDS = 5;
 
 /**
  * VisualizerCommunicatorに使われます。
@@ -202,7 +202,7 @@ public:
 };
 
 
-string buildReportJson(RectSet rectSet, double score, double fakeScore, Input input) {
+string buildReportJson(RectSet rectSet, double score, double fakeScore, Input input, double T) {
     using namespace HttpUtils;
     auto f = [&](Rect r, int idx) {
         double h = 1 - 1. * min(r.area(), input.advs[idx].r) / max(r.area(), input.advs[idx].r);
@@ -232,11 +232,13 @@ string buildReportJson(RectSet rectSet, double score, double fakeScore, Input in
     rectsArray << "]";
     return mapToJson(
             {
-                    {"rects",     rectsArray.str()},
-                    {"type",      jsonValue("draw")},
-                    {"fakeScore", jsonValue(fakeScore)},
-                    {"score",     jsonValue(score)},
-                    {"relTime",   jsonValue(ctx->timer->relative_time_elapsed())}
+                    {"rects",       rectsArray.str()},
+                    {"type",        jsonValue("draw")},
+                    {"fakeScore",   jsonValue(fakeScore)},
+                    {"score",       jsonValue(score)},
+                    {"relTime",     jsonValue(ctx->timer->relative_time_elapsed())},
+                    {"temperature", jsonValue(T)},
+
             }
     );
 }
@@ -439,7 +441,7 @@ Output solveBySimulatedAnnealing(Input input, const Args &args) {
             if (emit) {
                 auto jsonBuilder = [&]() {
                     // lazy evaluation
-                    return buildReportJson(rectSet, rectSet.getRealScore(), rectSet.score(), input);
+                    return buildReportJson(rectSet, rectSet.getRealScore(), rectSet.score(), input, t);
                 };
                 ctx->vis->emitJsonWithTimer(jsonBuilder);
             }
@@ -454,8 +456,10 @@ Output solveBySimulatedAnnealing(Input input, const Args &args) {
     rectSet.init(rects, input.advs);
 
     auto computeTemperature = [&](double progress) {
-        return args.saStartTemp
-               + progress * (args.saEndTemp - args.saStartTemp);
+        if( progress > M_PI / 5 ){
+            return 0.00001 * (1-progress);
+        }
+        return args.saStartTemp - args.saStartTemp * sin(progress * 2.5 * M_PI) * sin(progress * 2.5 * M_PI);
     };
 
     while (!ctx->timer->is_TLE()) {
@@ -472,7 +476,7 @@ void runMain(Args args, istream &is) {
     auto *vis = new Visualizer(timer);
     vis->emitJson(HttpUtils::mapToJson(
             {
-                    {"type", "reset"}
+                    {"type", HttpUtils::jsonValue("reset")}
             }
     ));
     AHC001VisualizerCommunicator *visCom = AHC001VisualizerCommunicator::start(vis, timer);
@@ -486,7 +490,7 @@ void runMain(Args args, istream &is) {
 int main(int argc, char *argv[]) {
     Args args = Args::fromProgramArgs(argc, argv);
 #ifdef CLION
-    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0096.txt");
+    auto inputSrc = loadFile("/home/kyuridenamida/ahc001/in/0098.txt");
     runMain(args, inputSrc);
 #else
     runMain(args, cin);

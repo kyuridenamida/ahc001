@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 
 import './App.css';
 import {subscribePublishEvent} from "./utils/SocketIOUtils";
@@ -34,99 +34,159 @@ interface Point {
     y: number;
 }
 
-interface HistoryItem {
+interface TimeScorePair {
     t: number
     score: number
 }
 
+
+interface TimeTemperaturePair {
+    t: number
+    temperature: number
+}
+
 function App() {
-    const [context, setContext] = useState<CanvasRenderingContext2D | null>(null);
+    const [scoreChartContext, setScoreChartContext] = useState<CanvasRenderingContext2D | null>(null);
+    const [mainChartContext, setMainChartContext] = useState<CanvasRenderingContext2D | null>(null);
+    const [temperatureChartContext, setTemperatureChartContext] = useState<CanvasRenderingContext2D | null>(null);
+
     const [payload, setPayload] = useState<DrawPayload | null>();
     const [selectedRectangles, setSelectedRectangles] = useState<Rect[]>([]);
     const [communicationFile, setCommunicationFile] = useState<string | null>();
 
-    const [history, setHistory] = useState<HistoryItem[]>([]);
-
     useEffect(() => {
-        const canvas = document.getElementById("canvas") as HTMLCanvasElement | null;
-        const canvasContext = canvas?.getContext("2d") ?? null;
-        setContext(canvasContext)
+        const mainChartCanvas = document.getElementById("mainCanvas") as HTMLCanvasElement | null;
+        const mainChartCanvasContext = mainChartCanvas?.getContext("2d") ?? null;
+        setMainChartContext(mainChartCanvasContext)
+
+        const scoreChartCanvas = document.getElementById("scoreCanvas") as HTMLCanvasElement | null;
+        const scoreChartContext = scoreChartCanvas?.getContext("2d") ?? null;
+        setScoreChartContext(scoreChartContext);
+        if (scoreChartContext) {
+            scoreChartContext.fillStyle = "lightgray";
+            scoreChartContext.fillRect(0, 0, scoreChartContext.canvas.width, scoreChartContext.canvas.height);
+        }
+
+        const temperatureChartContextCanvas = document.getElementById("temperatureCanvas") as HTMLCanvasElement | null;
+        const temperatureChartContextContext = temperatureChartContextCanvas?.getContext("2d") ?? null;
+        setTemperatureChartContext(temperatureChartContextContext);
+        if (temperatureChartContextContext) {
+            temperatureChartContextContext.fillStyle = "lightgray";
+            temperatureChartContextContext.fillRect(0, 0, temperatureChartContextContext.canvas.width, temperatureChartContextContext.canvas.height);
+        }
+
     }, []);
 
     const [startPoint, setStartPoint] = useState<Point | null>(null);
     const [endPoint, setEndPoint] = useState<Point | null>(null);
 
     useEffect(() => {
-        if (!context || !payload) return;
-        context.fillStyle = "white";
-        context.fillRect(0, 0, context.canvas.width, context.canvas.height);
+        if (!mainChartContext || !payload) return;
+        mainChartContext.fillStyle = "white";
+        mainChartContext.fillRect(0, 0, mainChartContext.canvas.width, mainChartContext.canvas.height);
 
+        const xScale =  mainChartContext.canvas.width / 10000;
+        const yScale =  mainChartContext.canvas.height / 10000;
         payload.rects.forEach(
             (r_) => {
                 const rect = {...r_};
                 let val = rect.need / 1000000;
-                context.fillStyle = scoreToColor(rect.subScore, val);
+                mainChartContext.fillStyle = scoreToColor(rect.subScore, val);
 
                 if (!(rect.l <= rect.px && rect.px < rect.r) || !(rect.d <= rect.py && rect.py < rect.u)) {
-                    context.fillStyle = "gray";
+                    mainChartContext.fillStyle = "gray";
                 }
+                rect.l *= xScale;
+                rect.r *= xScale;
+                rect.d *= yScale;
+                rect.u *= yScale;
+                rect.px *=xScale;
+                rect.py *= yScale;
 
-                // context.fillStyle = contributionColor(r.subScore, payload.score);
-                rect.l /= 10;
-                rect.r /= 10;
-                rect.d /= 10;
-                rect.u /= 10;
-                rect.px /= 10;
-                rect.py /= 10;
-
-                context.fillRect(rect.l, rect.d, rect.r - rect.l, rect.u - rect.d);
-                context.strokeStyle = "black";
-                context.strokeRect(rect.l, rect.d, rect.r - rect.l, rect.u - rect.d);
+                mainChartContext.fillRect(rect.l, rect.d, rect.r - rect.l, rect.u - rect.d);
+                mainChartContext.strokeStyle = "black";
+                mainChartContext.strokeRect(rect.l, rect.d, rect.r - rect.l, rect.u - rect.d);
 
 
                 if (selectedRectangles.some((s) => s.id == rect.id)) {
-                    context.fillStyle = "rgba(255, 0, 255, 0.5)";
-                    context.fillRect(rect.l, rect.d, rect.r - rect.l, rect.u - rect.d);
+                    mainChartContext.fillStyle = "rgba(255, 0, 255, 0.5)";
+                    mainChartContext.fillRect(rect.l, rect.d, rect.r - rect.l, rect.u - rect.d);
                 }
 
-                context.beginPath();
-                context.arc(rect.px, rect.py, 2, 0, 2 * Math.PI);
-                context.stroke();
+                mainChartContext.beginPath();
+                mainChartContext.arc(rect.px, rect.py, 2, 0, 2 * Math.PI);
+                mainChartContext.stroke();
 
                 const qx = (rect.l + rect.r) / 2;
                 const qy = (rect.u + rect.d) / 2;
 
-                context.beginPath();
-                context.moveTo(qx, qy);
-                context.lineTo(rect.px, rect.py);
-                context.stroke();
+                mainChartContext.beginPath();
+                mainChartContext.moveTo(qx, qy);
+                mainChartContext.lineTo(rect.px, rect.py);
+                mainChartContext.stroke();
 
-                context.fillStyle = "black";
-                context.fillText(`${Math.round(rect.subScore * 100) / 100}`, qx, qy + 10);
-                context.fillText(`${rect.need}`, qx, qy);
+                mainChartContext.fillStyle = "black";
+                mainChartContext.fillText(`${Math.round(rect.subScore * 100) / 100}`, qx, qy + 10);
+                mainChartContext.fillText(`${rect.need}`, qx, qy);
             }
         );
         if (startPoint && endPoint) {
-            context.fillStyle = "rgba(128, 128, 255, 0.5)";
-            context.fillRect(startPoint.x, startPoint.y, endPoint.x - startPoint.x, endPoint.y - startPoint.y);
+            mainChartContext.fillStyle = "rgba(128, 128, 255, 0.5)";
+            mainChartContext.fillRect(startPoint.x, startPoint.y, endPoint.x - startPoint.x, endPoint.y - startPoint.y);
         }
 
 
     }, [payload, selectedRectangles, startPoint, endPoint]);
 
+    const clearCanvas = () => {
+        if (scoreChartContext) {
+            scoreChartContext.fillStyle = "lightgray";
+            scoreChartContext.fillRect(0, 0, scoreChartContext.canvas.width, scoreChartContext.canvas.height);
+            scoreChartContext.beginPath();
+        }
+        if (mainChartContext) {
+            mainChartContext.fillStyle = "white";
+            mainChartContext.fillRect(0, 0, mainChartContext.canvas.width, mainChartContext.canvas.height);
+        }
+
+        if (temperatureChartContext) {
+            temperatureChartContext.fillStyle = "lightgray";
+            temperatureChartContext.fillRect(0, 0, temperatureChartContext.canvas.width, temperatureChartContext.canvas.height);
+            temperatureChartContext.beginPath();
+        }
+    }
+
+    const addPointToScoreChart = (point: TimeScorePair) => {
+        if (!scoreChartContext) return;
+        scoreChartContext.strokeStyle = "blue";
+        scoreChartContext.lineTo(
+            point.t * scoreChartContext.canvas.width,
+            scoreChartContext.canvas.height - point.score * scoreChartContext.canvas.height
+        );
+        scoreChartContext.stroke();
+    };
+
+    const addPointToTemperatureChart = (point: TimeTemperaturePair) => {
+        if (!temperatureChartContext) return;
+        temperatureChartContext.strokeStyle = "red";
+        const startTemperature = 0.0005;
+        temperatureChartContext.lineTo(point.t * temperatureChartContext.canvas.width,
+            temperatureChartContext.canvas.height - point.temperature * temperatureChartContext.canvas.height * (1. / startTemperature));
+        temperatureChartContext.stroke();
+    };
     useEffect(() => {
         subscribePublishEvent((payload) => {
             if (payload.type == "draw") {
                 setPayload(payload);
-                history.push({t: payload.relTime, score: payload.score})
-                setHistory(history);
+                addPointToScoreChart({t: payload.relTime, score: payload.score});
+                addPointToTemperatureChart({t: payload.relTime, temperature: payload.temperature})
             } else if (payload.type == "communication") {
                 setCommunicationFile(payload.file);
             } else {
-                setHistory([]);
+                clearCanvas();
             }
         });
-    }, []);
+    }, [scoreChartContext, mainChartContext, temperatureChartContext]);
     const sendRemoveRequest = async (file: string, remIndexes: number[]) => {
         await fetch("/write/", {
             method: 'POST',
@@ -142,13 +202,19 @@ function App() {
     return (
         <div className="App">
             <div className="App-main">
-                {!context && "Loading Canvas..."}
-                <p>{payload?.score.toFixed(6)}</p>
-                <canvas width="1000" height="1000" id="canvas"
+                {!mainChartContext && "Loading Canvas..."}
+
+                <p>{payload?.temperature.toFixed(6)} (Temperature) </p>
+                <canvas width="1000" height="100" id="temperatureCanvas"/>
+
+                <p>{payload?.score.toFixed(6)} (Score)</p>
+                <canvas width="1000" height="200" id="scoreCanvas"/>
+
+                <canvas width="1000" height="1000" id="mainCanvas"
                         onMouseDown={(e) => {
-                            if (!context) return;
-                            const X = e.clientX - context.canvas.getBoundingClientRect().left;
-                            const Y = e.clientY - context.canvas.getBoundingClientRect().top;
+                            if (!mainChartContext) return;
+                            const X = e.clientX - mainChartContext.canvas.getBoundingClientRect().left;
+                            const Y = e.clientY - mainChartContext.canvas.getBoundingClientRect().top;
                             setStartPoint({
                                 x: X,
                                 y: Y
@@ -156,10 +222,10 @@ function App() {
                         }}
 
                         onMouseMove={(e) => {
-                            if (!context) return;
+                            if (!mainChartContext) return;
 
-                            const X = e.clientX - context.canvas.getBoundingClientRect().left;
-                            const Y = e.clientY - context.canvas.getBoundingClientRect().top;
+                            const X = e.clientX - mainChartContext.canvas.getBoundingClientRect().left;
+                            const Y = e.clientY - mainChartContext.canvas.getBoundingClientRect().top;
                             if (startPoint != null) {
                                 setEndPoint({
                                     x: X,
@@ -169,7 +235,7 @@ function App() {
                         }}
 
                         onMouseUp={async (e) => {
-                            if (!context) return;
+                            if (!mainChartContext) return;
 
                             if (startPoint && endPoint) {
                                 const selectedRects = (payload?.rects ?? [])
@@ -202,10 +268,6 @@ function App() {
                 <div className={"some-info"}>
                     Communication File: {communicationFile}
                 </div>
-                <div className={"some-info"}>
-                    Data points: {history.length}
-                </div>
-
                 <div className={"selected-rects"}>
                     <p>Selected IDs:</p>
                     <p>{selectedRectangles.map(r => r.id).join(",")}</p>
